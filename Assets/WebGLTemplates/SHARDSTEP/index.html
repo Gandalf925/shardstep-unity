@@ -28,7 +28,7 @@
 <body>
   <div id="unity-container">
     <canvas id="unity-canvas" tabindex="-1" aria-label="{{{ PRODUCT_NAME }}} game canvas"></canvas>
-    <div id="launch-overlay" class="overlay"><div class="panel"><h1 class="brand">SHARDSTEP</h1><p class="subtitle">Touch a destination and release to dash. Drag farther to cancel. Use ATTACK to strike in the facing direction.</p><button id="start-button" type="button">TAP TO START</button></div></div>
+    <div id="launch-overlay" class="overlay"><div class="panel"><h1 class="brand">SHARDSTEP</h1><p class="subtitle">Time is frozen while you decide. Choose MOVE or AIM / FIRE, then touch the arena to commit one action.</p><button id="start-button" type="button">TAP TO START</button></div></div>
     <div id="loading-overlay" class="overlay"><div class="panel"><h1 class="brand">SHARDSTEP</h1><p class="subtitle" id="loading-label">LOADING UNITY</p><div id="progress-track"><div id="progress-bar"></div></div></div></div>
     <div id="error-overlay" class="overlay"><div class="panel"><h1 class="brand">LOAD FAILED</h1><p id="error-message"></p></div></div>
   </div>
@@ -37,11 +37,9 @@
     "use strict";
     var container=document.getElementById("unity-container"),canvas=document.getElementById("unity-canvas"),launchOverlay=document.getElementById("launch-overlay"),loadingOverlay=document.getElementById("loading-overlay"),errorOverlay=document.getElementById("error-overlay"),errorMessage=document.getElementById("error-message"),progressBar=document.getElementById("progress-bar"),loadingLabel=document.getElementById("loading-label"),startButton=document.getElementById("start-button");
     var launchStarted=false,unityInstance=null;
-    function resetUnityInput(){ if(!unityInstance||!unityInstance.SendMessage)return; try{unityInstance.SendMessage("SHARDSTEP Runtime","ResetBrowserInput");}catch(e){} }
     function prevent(e){e.preventDefault();}
     ["touchstart","touchmove","touchend","touchcancel"].forEach(function(n){canvas.addEventListener(n,prevent,{passive:false});});
     document.addEventListener("contextmenu",prevent); document.addEventListener("gesturestart",prevent,{passive:false});
-    document.addEventListener("visibilitychange",function(){if(document.hidden)resetUnityInput();}); window.addEventListener("blur",resetUnityInput);
     async function requestImmersive(){ if(container.requestFullscreen&&!document.fullscreenElement){try{await container.requestFullscreen({navigationUI:"hide"});}catch(e){try{await container.requestFullscreen();}catch(_){}}} try{if(screen.orientation&&screen.orientation.lock)await screen.orientation.lock("portrait");}catch(e){} }
     function showError(error){loadingOverlay.style.display="none";launchOverlay.style.display="none";errorMessage.textContent=error&&error.message?error.message:String(error);errorOverlay.style.display="flex";}
     async function startUnity(){ if(launchStarted)return; launchStarted=true;startButton.disabled=true;await requestImmersive();launchOverlay.style.display="none";loadingOverlay.style.display="flex";
@@ -50,7 +48,7 @@
     }
     startButton.addEventListener("click",startUnity,{once:true});
     if(!(window.matchMedia("(pointer: coarse)").matches||navigator.maxTouchPoints>0))startUnity();
-    window.addEventListener("beforeunload",function(){resetUnityInput();if(unityInstance&&unityInstance.Quit)unityInstance.Quit();});
+    window.addEventListener("beforeunload",function(){if(unityInstance&&unityInstance.Quit)unityInstance.Quit();});
   }());
   </script>
 </body>
