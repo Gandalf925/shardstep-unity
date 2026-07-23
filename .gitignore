@@ -1,0 +1,43 @@
+# Unity generated
+[Ll]ibrary/
+[Tt]emp/
+[Oo]bj/
+[Bb]uild/
+[Bb]uilds/
+[Ll]ogs/
+UserSettings/
+MemoryCaptures/
+Recordings/
+
+# IDE
+.vs/
+.idea/
+.vscode/
+*.csproj
+*.sln
+*.suo
+*.user
+*.userprefs
+*.pidb
+*.booproj
+*.svd
+*.pdb
+*.mdb
+*.opendb
+*.VC.db
+
+# OS
+.DS_Store
+Thumbs.db
+
+# Unity packages / exports
+*.unitypackage
+*.apk
+*.aab
+
+# Commercial SIMPLE Apocalypse source assets must remain local.
+Assets/SIMPLE*/
+Assets/Synty*/
+
+# Generated local catalog
+Assets/SHARDSTEP/Generated/

@@ -1,0 +1,92 @@
+name: Unity 2023.2 WebGL CI
+
+on:
+  workflow_dispatch:
+
+concurrency:
+  group: unity-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: true
+
+jobs:
+  editmode-tests:
+    name: EditMode tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 45
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-2023.2.22f1-EditMode-${{ hashFiles('Packages/manifest.json') }}
+          restore-keys: |
+            Library-2023.2.22f1-EditMode-
+            Library-2023.2.22f1-
+
+      - name: Run Unity tests
+        id: tests
+        uses: game-ci/unity-test-runner@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: 2023.2.22f1
+          testMode: EditMode
+          githubToken: ${{ secrets.GITHUB_TOKEN }}
+          checkName: SHARDSTEP EditMode Tests
+          artifactsPath: artifacts/tests
+
+      - name: Upload test results
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-test-results
+          path: ${{ steps.tests.outputs.artifactsPath }}
+          if-no-files-found: warn
+
+  webgl-build:
+    name: WebGL build
+    needs: editmode-tests
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+          lfs: true
+
+      - name: Cache Unity Library
+        uses: actions/cache@v4
+        with:
+          path: Library
+          key: Library-2023.2.22f1-WebGL-${{ hashFiles('Packages/manifest.json') }}
+          restore-keys: |
+            Library-2023.2.22f1-WebGL-
+            Library-2023.2.22f1-
+
+      - name: Build WebGL
+        uses: game-ci/unity-builder@v4
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
+        with:
+          unityVersion: 2023.2.22f1
+          targetPlatform: WebGL
+          buildMethod: Shardstep.Editor.BuildAutomation.BuildWebGL
+          versioning: None
+
+      - name: Upload WebGL artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: shardstep-webgl
+          path: build/WebGL
+          if-no-files-found: error
+          retention-days: 14
