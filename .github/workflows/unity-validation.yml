@@ -18,6 +18,26 @@ concurrency:
   cancel-in-progress: true
 
 jobs:
+  source-inventory:
+    name: Runtime source inventory
+    runs-on: ubuntu-latest
+    timeout-minutes: 5
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+        with:
+          fetch-depth: 1
+          lfs: false
+
+      - name: List runtime sources
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo '=== Runtime files ==='
+          find Assets/SHARDSTEP/Runtime -maxdepth 1 -type f | sort
+          echo '=== Core gameplay type locations ==='
+          grep -R -n -E 'class (ArenaDirector|EnemyBrain|EnemyProjectile|Projectile|PlayerCombat|PlayerMotor)|enum EnemyKind' Assets/SHARDSTEP/Runtime || true
+
   editmode-tests:
     name: EditMode tests
     runs-on: ubuntu-latest
