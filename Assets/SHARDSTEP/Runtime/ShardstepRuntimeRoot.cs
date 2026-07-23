@@ -58,6 +58,7 @@ namespace Shardstep
 
         private void EnsureModules()
         {
+            EnsureSingle<ShardstepPortraitMoveController>();
             EnsureSingle<ShardstepGameplayPolish>();
             EnsureSingle<ShardstepCombatReadability>();
             EnsureSingle<ShardstepCombatAssist>();
