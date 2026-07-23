@@ -1,4 +1,5 @@
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Shardstep
 {
@@ -16,6 +17,7 @@ namespace Shardstep
         private Camera worldCamera;
 
         private Vector3 lastSafePosition;
+        private Vector3 appliedCameraOffset;
         private bool hasSafePosition;
         private int previousHealth = -1;
         private int previousEnemies = -1;
@@ -40,10 +42,44 @@ namespace Shardstep
 
         private void Awake()
         {
-            introUntil = Time.unscaledTime + IntroDuration;
+            ResetSceneState();
             whiteTexture = new Texture2D(1, 1, TextureFormat.RGBA32, false);
             whiteTexture.SetPixel(0, 0, Color.white);
             whiteTexture.Apply();
+        }
+
+        private void OnEnable()
+        {
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+        }
+
+        private void OnDisable()
+        {
+            SceneManager.sceneLoaded -= HandleSceneLoaded;
+            RestoreCameraPosition();
+        }
+
+        private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            RestoreCameraPosition();
+            player = null;
+            motor = null;
+            playerHealth = null;
+            director = null;
+            worldCamera = null;
+            ResetSceneState();
+        }
+
+        private void ResetSceneState()
+        {
+            hasSafePosition = false;
+            previousHealth = -1;
+            previousEnemies = -1;
+            introUntil = Time.unscaledTime + IntroDuration;
+            damageUntil = 0f;
+            killUntil = 0f;
+            cameraShake = 0f;
+            appliedCameraOffset = Vector3.zero;
         }
 
         private void Update()
@@ -61,18 +97,31 @@ namespace Shardstep
 
         private void LateUpdate()
         {
+            RestoreCameraPosition();
+
             if (worldCamera == null || cameraShake <= 0.001f)
             {
+                cameraShake = 0f;
                 return;
             }
 
             float strength = cameraShake * 0.08f;
-            Vector3 offset = new Vector3(
+            appliedCameraOffset = new Vector3(
                 Random.Range(-strength, strength),
                 Random.Range(-strength, strength),
                 0f);
-            worldCamera.transform.position += offset;
+            worldCamera.transform.position += appliedCameraOffset;
             cameraShake = Mathf.MoveTowards(cameraShake, 0f, Time.unscaledDeltaTime * 4.5f);
+        }
+
+        private void RestoreCameraPosition()
+        {
+            if (worldCamera != null && appliedCameraOffset.sqrMagnitude > 0f)
+            {
+                worldCamera.transform.position -= appliedCameraOffset;
+            }
+
+            appliedCameraOffset = Vector3.zero;
         }
 
         private void BindReferences()
@@ -87,12 +136,17 @@ namespace Shardstep
                     playerHealth = playerObject.GetComponent<Health>();
                     lastSafePosition = player.position;
                     hasSafePosition = true;
+                    previousHealth = playerHealth != null ? playerHealth.Current : -1;
                 }
             }
 
             if (director == null)
             {
                 director = Object.FindObjectOfType<ArenaDirector>();
+                if (director != null)
+                {
+                    previousEnemies = director.RemainingEnemies;
+                }
             }
 
             if (worldCamera == null)
@@ -108,7 +162,7 @@ namespace Shardstep
                 return;
             }
 
-            if (Physics.Raycast(player.position + Vector3.up, Vector3.down, out RaycastHit hit, 4f))
+            if (Physics.Raycast(player.position + Vector3.up, Vector3.down, out RaycastHit hit, 4f, ~0, QueryTriggerInteraction.Ignore))
             {
                 lastSafePosition = new Vector3(player.position.x, hit.point.y + 0.12f, player.position.z);
                 hasSafePosition = true;
@@ -235,6 +289,7 @@ namespace Shardstep
 
         private void OnDestroy()
         {
+            RestoreCameraPosition();
             if (whiteTexture != null)
             {
                 Destroy(whiteTexture);
