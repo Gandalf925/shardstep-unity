@@ -69,6 +69,8 @@ namespace Shardstep
 
     public sealed class ShardstepAdaptiveInput : MonoBehaviour
     {
+        private const float LegacyAimReleaseThreshold = 28f;
+
         private PlayerMotor motor;
         private PlayerCombat combat;
         private ArenaDirector director;
@@ -108,7 +110,7 @@ namespace Shardstep
 
             Vector2 movement = new Vector2(Input.GetAxisRaw("Horizontal"), Input.GetAxisRaw("Vertical"));
             HandleTouches(ref movement);
-            if (!touchDevice)
+            if (!touchDevice || (Input.touchCount == 0 && Input.mousePresent))
             {
                 HandleDesktopAim();
             }
@@ -170,6 +172,17 @@ namespace Shardstep
 
         private void HandleTouches(ref Vector2 movement)
         {
+            if (Input.touchCount == 0)
+            {
+                movementFinger = -1;
+                if (aimFinger >= 0)
+                {
+                    aimFinger = -1;
+                    combat.CancelAim();
+                }
+                return;
+            }
+
             for (int index = 0; index < Input.touchCount; index++)
             {
                 Touch touch = Input.GetTouch(index);
@@ -219,8 +232,16 @@ namespace Shardstep
                     else if (touch.phase == TouchPhase.Ended || touch.phase == TouchPhase.Canceled)
                     {
                         float magnitude = (touch.position - aimStart).magnitude;
-                        combat.ReleaseAim(magnitude);
+                        float threshold = ShardstepMobilePolicy.AimReleaseThreshold(Screen.width, Screen.height);
                         aimFinger = -1;
+                        if (magnitude < threshold)
+                        {
+                            combat.CancelAim();
+                        }
+                        else
+                        {
+                            combat.ReleaseAim(LegacyAimReleaseThreshold);
+                        }
                     }
                 }
             }
@@ -256,6 +277,11 @@ namespace Shardstep
             }
 
             combat.SetWeapon(combat.Mode == WeaponMode.Rail ? WeaponMode.Blade : WeaponMode.Rail);
+        }
+
+        public void ResetBrowserInput()
+        {
+            ResetControls();
         }
 
         private void ResetControls()
