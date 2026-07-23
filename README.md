@@ -14,7 +14,10 @@ Unity 2023.2.22f1 / WebGLで再構築するSHARDSTEPのCombat Vertical Sliceで�
 - 敵全滅後のExtraction Gate解放
 - SIMPLE Apocalypse Prefab自動検出
 - Unity EditModeテスト
-- GameCIによるWebGL自動ビルド
+- GameCIによる手動WebGLビルド
+- PC / タッチ端末共通のAdaptive Input
+- スマートフォン向け横画面・全画面・Safe Area対応WebGLテンプレート
+- フォーカス喪失、バックグラウンド移行、復帰時の入力リセット
 
 ## Unityバージョン
 
@@ -41,4 +44,14 @@ GitHub Actionsには次のRepository Secretsが必要です。
 - `UNITY_EMAIL`
 - `UNITY_PASSWORD`
 
-詳細は[`docs/SETUP_JA.md`](docs/SETUP_JA.md)を参照してください。
+WorkflowはUnityアカウント保護のため手動実行専用です。
+
+- Unity / CI設定: [`docs/SETUP_JA.md`](docs/SETUP_JA.md)
+- スマートフォン配信・実機試験: [`docs/MOBILE_WEBGL_TEST_JA.md`](docs/MOBILE_WEBGL_TEST_JA.md)
+
+## 確認状況
+
+- PC WebGL起動: 確認済み
+- PC移動: 確認済み
+- スマートフォン向け実装: CI確認前
+- iPhone / Android実機: 未確認

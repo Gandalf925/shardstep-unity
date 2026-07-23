@@ -11,6 +11,7 @@ namespace Shardstep.Editor
     public static class BuildAutomation
     {
         private const string GeneratedScenePath = "Assets/SHARDSTEP/Generated/Scenes/Bootstrap.unity";
+        private const string WebGLTemplate = "PROJECT:SHARDSTEP";
 
         [MenuItem("SHARDSTEP/Build/WebGL")]
         public static void BuildWebGL()
@@ -20,7 +21,11 @@ namespace Shardstep.Editor
             EditorUserBuildSettings.SwitchActiveBuildTarget(BuildTargetGroup.WebGL, BuildTarget.WebGL);
             PlayerSettings.companyName = "G925 INTERACTIVE";
             PlayerSettings.productName = "SHARDSTEP";
-            PlayerSettings.bundleVersion = "0.5.0-unity-slice";
+            PlayerSettings.bundleVersion = "0.6.0-mobile-foundation";
+            PlayerSettings.defaultScreenWidth = 1280;
+            PlayerSettings.defaultScreenHeight = 720;
+            PlayerSettings.runInBackground = false;
+            PlayerSettings.WebGL.template = WebGLTemplate;
             PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
             PlayerSettings.WebGL.decompressionFallback = true;
 #pragma warning disable CS0618
