@@ -66,14 +66,32 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Cache Unity Library
+      - name: Free disk space for Unity WebGL
+        shell: bash
+        run: |
+          set -euo pipefail
+          echo 'Disk usage before cleanup:'
+          df -h /
+
+          # GitHub-hosted runners contain large SDKs that are not used by a WebGL-only Unity build.
+          sudo rm -rf /usr/local/lib/android
+          sudo rm -rf /usr/share/dotnet
+          sudo rm -rf /opt/ghc
+          sudo rm -rf /usr/local/.ghcup
+          sudo rm -rf /opt/hostedtoolcache/CodeQL
+          sudo apt-get clean
+          docker system prune --all --force || true
+
+          echo 'Disk usage after cleanup:'
+          df -h /
+
+      - name: Cache Unity WebGL Library
         uses: actions/cache@v4
         with:
           path: Library
           key: Library-2023.2.22f1-WebGL-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: |
             Library-2023.2.22f1-WebGL-
-            Library-2023.2.22f1-
 
       - name: Build WebGL
         id: build
@@ -88,17 +106,6 @@ jobs:
           buildMethod: Shardstep.Editor.BuildAutomation.BuildWebGL
           versioning: None
           allowDirtyBuild: true
-          collectUnityLogs: true
-          streamUnityLogs: true
-
-      - name: Upload Unity diagnostics
-        if: always()
-        uses: actions/upload-artifact@v4
-        with:
-          name: unity-webgl-diagnostics
-          path: Logs/UnityDiagnostics
-          if-no-files-found: warn
-          retention-days: 14
 
       - name: Upload WebGL artifact
         uses: actions/upload-artifact@v4
