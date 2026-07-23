@@ -27,7 +27,7 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Library
-          key: Library-2023.2.22f1-EditMode-${{ hashFiles('Packages/manifest.json') }}
+          key: Library-2023.2.22f1-EditMode-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: |
             Library-2023.2.22f1-EditMode-
             Library-2023.2.22f1-
@@ -70,12 +70,13 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Library
-          key: Library-2023.2.22f1-WebGL-${{ hashFiles('Packages/manifest.json') }}
+          key: Library-2023.2.22f1-WebGL-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: |
             Library-2023.2.22f1-WebGL-
             Library-2023.2.22f1-
 
       - name: Build WebGL
+        id: build
         uses: game-ci/unity-builder@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
@@ -86,6 +87,18 @@ jobs:
           targetPlatform: WebGL
           buildMethod: Shardstep.Editor.BuildAutomation.BuildWebGL
           versioning: None
+          allowDirtyBuild: true
+          collectUnityLogs: true
+          streamUnityLogs: true
+
+      - name: Upload Unity diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: unity-webgl-diagnostics
+          path: Logs/UnityDiagnostics
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Upload WebGL artifact
         uses: actions/upload-artifact@v4
