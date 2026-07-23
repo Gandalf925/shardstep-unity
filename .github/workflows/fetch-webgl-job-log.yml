@@ -42,14 +42,27 @@ jobs:
           fi
 
           find ci-log/extracted -type f -print | sort > ci-log/files.txt
+          : > ci-log/combined.log
+          while IFS= read -r file; do
+            echo "===== ${file} =====" >> ci-log/combined.log
+            cat "${file}" >> ci-log/combined.log
+          done < ci-log/files.txt
+
+          grep -Eai 'error|exception|failed|failure|fatal|not found|manifest|license|docker|build result|exit code' ci-log/combined.log \
+            | tail -n 70 > ci-log/error-lines.txt || true
+          tail -n 80 ci-log/combined.log > ci-log/final-lines.txt
+
           {
-            echo '## Run 29975524124 — WebGL job log tail'
+            echo '## Run 29975524124 — concise WebGL failure excerpt'
             echo
+            echo '### Error-related lines'
             echo '```text'
-            while IFS= read -r file; do
-              echo "===== ${file} ====="
-              cat "${file}"
-            done < ci-log/files.txt | tail -n 220
+            cat ci-log/error-lines.txt
+            echo '```'
+            echo
+            echo '### Final 80 lines'
+            echo '```text'
+            cat ci-log/final-lines.txt
             echo '```'
           } > ci-log/comment.md
 
@@ -59,7 +72,7 @@ jobs:
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: webgl-job-log-29975524124
+          name: webgl-job-log-29975524124-concise
           path: ci-log
           if-no-files-found: error
           retention-days: 14
