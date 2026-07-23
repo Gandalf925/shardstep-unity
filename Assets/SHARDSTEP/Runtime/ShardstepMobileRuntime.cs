@@ -30,7 +30,7 @@ namespace Shardstep
         private static void ConfigureRuntime()
         {
             Input.multiTouchEnabled = true;
-            Input.simulateMouseWithTouches = false;
+            Input.simulateMouseWithTouches = true;
             QualitySettings.vSyncCount = 0;
             Application.targetFrameRate = 60;
 
@@ -145,14 +145,14 @@ namespace Shardstep
 
         private void RefreshTouchCapability()
         {
-            if (Input.touchCount > 0)
+            if (touchDevice)
             {
-                touchDevice = true;
                 return;
             }
 
-            touchDevice = Input.touchSupported &&
-                (Application.isMobilePlatform || SystemInfo.deviceType == DeviceType.Handheld);
+            touchDevice = Input.touchCount > 0 ||
+                (Input.touchSupported &&
+                    (Application.isMobilePlatform || SystemInfo.deviceType == DeviceType.Handheld));
         }
 
         private void ApplyMovement(Vector2 movement)
