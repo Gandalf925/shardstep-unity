@@ -1,19 +1,20 @@
-name: Unity 2023.2 WebGL CI
+name: SHARDSTEP Development Validation
 
 on:
-  workflow_dispatch:
   push:
     branches:
-      - codex/github-pages-mobile-preview
+      - codex/gameplay-polish-batch-1
+  pull_request:
+    branches:
+      - main
+  workflow_dispatch:
 
 permissions:
   contents: read
   checks: write
-  pages: write
-  id-token: write
 
 concurrency:
-  group: unity-${{ github.workflow }}-${{ github.ref }}
+  group: shardstep-validation-${{ github.ref }}
   cancel-in-progress: true
 
 jobs:
@@ -32,9 +33,9 @@ jobs:
         uses: actions/cache@v4
         with:
           path: Library
-          key: Library-2023.2.22f1-EditMode-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          key: Library-2023.2.22f1-Validation-EditMode-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: |
-            Library-2023.2.22f1-EditMode-
+            Library-2023.2.22f1-Validation-EditMode-
             Library-2023.2.22f1-
 
       - name: Run Unity tests
@@ -48,19 +49,19 @@ jobs:
           unityVersion: 2023.2.22f1
           testMode: EditMode
           githubToken: ${{ secrets.GITHUB_TOKEN }}
-          checkName: SHARDSTEP EditMode Tests
+          checkName: SHARDSTEP Development EditMode Tests
           artifactsPath: artifacts/tests
 
       - name: Upload test results
         if: always()
         uses: actions/upload-artifact@v4
         with:
-          name: unity-test-results
+          name: development-test-results
           path: ${{ steps.tests.outputs.artifactsPath }}
           if-no-files-found: warn
 
   webgl-build:
-    name: WebGL build
+    name: WebGL validation build
     needs: editmode-tests
     runs-on: ubuntu-latest
     timeout-minutes: 60
@@ -71,13 +72,10 @@ jobs:
           fetch-depth: 0
           lfs: true
 
-      - name: Free disk space for Unity WebGL
+      - name: Free disk space
         shell: bash
         run: |
           set -euo pipefail
-          echo 'Disk usage before cleanup:'
-          df -h /
-
           sudo rm -rf /usr/local/lib/android
           sudo rm -rf /usr/share/dotnet
           sudo rm -rf /opt/ghc
@@ -85,20 +83,18 @@ jobs:
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo apt-get clean
           docker system prune --all --force || true
-
-          echo 'Disk usage after cleanup:'
           df -h /
 
       - name: Cache Unity WebGL Library
         uses: actions/cache@v4
         with:
           path: Library
-          key: Library-2023.2.22f1-WebGL-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
+          key: Library-2023.2.22f1-Validation-WebGL-${{ hashFiles('Assets/**', 'Packages/**', 'ProjectSettings/**') }}
           restore-keys: |
+            Library-2023.2.22f1-Validation-WebGL-
             Library-2023.2.22f1-WebGL-
 
       - name: Build WebGL
-        id: build
         uses: game-ci/unity-builder@v4
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
@@ -111,27 +107,10 @@ jobs:
           versioning: None
           allowDirtyBuild: true
 
-      - name: Upload WebGL artifact
+      - name: Upload validation build
         uses: actions/upload-artifact@v4
         with:
-          name: shardstep-webgl
+          name: shardstep-webgl-validation
           path: build/WebGL
           if-no-files-found: error
-          retention-days: 14
-
-      - name: Upload GitHub Pages artifact
-        uses: actions/upload-pages-artifact@v3
-        with:
-          path: build/WebGL
-
-  deploy-pages:
-    name: Deploy GitHub Pages
-    needs: webgl-build
-    runs-on: ubuntu-latest
-    environment:
-      name: github-pages
-      url: ${{ steps.deployment.outputs.page_url }}
-    steps:
-      - name: Deploy to GitHub Pages
-        id: deployment
-        uses: actions/deploy-pages@v4
+          retention-days: 7
