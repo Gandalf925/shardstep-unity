@@ -11,7 +11,6 @@ namespace Shardstep
 
         private ArenaDirector director;
         private int previousEnemies = -1;
-        private float runStartedAt;
         private float introUntil;
         private float lastEnemyUntil;
         private bool reloading;
@@ -46,7 +45,6 @@ namespace Shardstep
         private void ResetRunState()
         {
             previousEnemies = -1;
-            runStartedAt = Time.unscaledTime;
             introUntil = Time.unscaledTime + IntroFullDuration;
             lastEnemyUntil = 0f;
             reloading = false;
@@ -139,6 +137,7 @@ namespace Shardstep
                 ShardstepClock.Instance.ForcedFreeze = false;
                 ShardstepClock.Instance.IsAiming = false;
                 ShardstepClock.Instance.MovementMagnitude = 0f;
+                ShardstepClock.Instance.CancelCurrentAction();
             }
 
             Scene active = SceneManager.GetActiveScene();
@@ -168,14 +167,19 @@ namespace Shardstep
             if (!director.Victory && !director.Defeat && Time.unscaledTime < introUntil)
             {
                 GUIStyle style = PanelStyle();
-                GUI.Box(new Rect(safe.xMin + margin, top + safe.height * 0.22f, safe.width - margin * 2f, 118f),
-                    "ELIMINATE ALL HOSTILES\nTAP A DESTINATION • ATTACK • SWITCH WEAPONS", style);
+                GUI.Box(
+                    new Rect(safe.xMin + margin, top + safe.height * 0.22f, safe.width - margin * 2f, 118f),
+                    "ELIMINATE ALL HOSTILES\nTAP A DIRECTION • READ BULLETS • COMMIT ONE ACTION",
+                    style);
             }
 
             if (!director.Victory && !director.Defeat && Time.unscaledTime < lastEnemyUntil)
             {
                 GUIStyle style = PanelStyle();
-                GUI.Box(new Rect(safe.center.x - 130f, top + safe.height * 0.34f, 260f, 58f), "LAST HOSTILE", style);
+                GUI.Box(
+                    new Rect(safe.center.x - 130f, top + safe.height * 0.34f, 260f, 58f),
+                    "LAST HOSTILE",
+                    style);
             }
 
             if (!director.Victory && !director.Defeat)
@@ -188,15 +192,25 @@ namespace Shardstep
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), pixel);
             GUI.color = previous;
 
-            float elapsed = Mathf.Max(0f, Time.unscaledTime - runStartedAt);
+            int actions = ShardstepClock.Instance != null
+                ? ShardstepClock.Instance.CompletedActions
+                : 0;
             string title = director.Victory ? "AREA SECURED" : "TIMELINE COLLAPSED";
-            string subtitle = director.Victory ? $"CLEAR TIME  {elapsed:0.0}s" : "ADAPT AND RETRY";
+            string subtitle = director.Victory
+                ? $"ACTIONS  {actions}"
+                : "READ THE TIMELINE AND RETRY";
             GUIStyle resultStyle = PanelStyle();
-            GUI.Box(new Rect(safe.xMin + margin, top + safe.height * 0.28f, safe.width - margin * 2f, 128f),
-                title + "\n" + subtitle, resultStyle);
+            GUI.Box(
+                new Rect(safe.xMin + margin, top + safe.height * 0.28f, safe.width - margin * 2f, 128f),
+                title + "\n" + subtitle,
+                resultStyle);
 
             Rect screenRect = RetryRectScreen();
-            Rect guiRect = new Rect(screenRect.x, Screen.height - screenRect.yMax, screenRect.width, screenRect.height);
+            Rect guiRect = new Rect(
+                screenRect.x,
+                Screen.height - screenRect.yMax,
+                screenRect.width,
+                screenRect.height);
             GUI.color = new Color(0.08f, 0.78f, 0.86f, 0.94f);
             GUI.DrawTexture(guiRect, pixel);
             GUI.color = previous;
