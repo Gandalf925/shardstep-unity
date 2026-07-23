@@ -6,7 +6,6 @@ namespace Shardstep
     [DefaultExecutionOrder(10000)]
     public sealed class ShardstepGameplayPolish : MonoBehaviour
     {
-        private const float IntroDuration = 2.2f;
         private const float FeedbackDuration = 0.28f;
         private const float RescueFloor = -2.5f;
 
@@ -21,24 +20,10 @@ namespace Shardstep
         private bool hasSafePosition;
         private int previousHealth = -1;
         private int previousEnemies = -1;
-        private float introUntil;
         private float damageUntil;
         private float killUntil;
         private float cameraShake;
         private Texture2D whiteTexture;
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void Install()
-        {
-            if (Object.FindObjectOfType<ShardstepGameplayPolish>() != null)
-            {
-                return;
-            }
-
-            GameObject host = new GameObject("SHARDSTEP Gameplay Polish");
-            Object.DontDestroyOnLoad(host);
-            host.AddComponent<ShardstepGameplayPolish>();
-        }
 
         private void Awake()
         {
@@ -75,7 +60,6 @@ namespace Shardstep
             hasSafePosition = false;
             previousHealth = -1;
             previousEnemies = -1;
-            introUntil = Time.unscaledTime + IntroDuration;
             damageUntil = 0f;
             killUntil = 0f;
             cameraShake = 0f;
@@ -218,20 +202,9 @@ namespace Shardstep
 
         private void OnGUI()
         {
-            if (whiteTexture == null)
+            if (whiteTexture == null || (director != null && (director.Victory || director.Defeat)))
             {
                 return;
-            }
-
-            Rect safe = Screen.safeArea;
-            float top = Screen.height - safe.yMax;
-            float margin = Mathf.Clamp(safe.width * 0.035f, 12f, 26f);
-
-            if (Time.unscaledTime < introUntil)
-            {
-                DrawCenteredPanel(
-                    new Rect(safe.xMin + margin, top + safe.height * 0.28f, safe.width - margin * 2f, 126f),
-                    "ELIMINATE ALL HOSTILES\nTOUCH A DESTINATION TO DASH\nUSE ATTACK TO STRIKE");
             }
 
             if (playerHealth != null && playerHealth.Maximum > 0)
@@ -252,19 +225,6 @@ namespace Shardstep
             {
                 DrawScreenTint(new Color(0.1f, 1f, 0.86f, 0.12f));
             }
-
-            if (director != null && director.Victory)
-            {
-                DrawCenteredPanel(
-                    new Rect(safe.xMin + margin, top + safe.height * 0.32f, safe.width - margin * 2f, 116f),
-                    "AREA SECURED\nALL HOSTILES ELIMINATED");
-            }
-            else if (director != null && director.Defeat)
-            {
-                DrawCenteredPanel(
-                    new Rect(safe.xMin + margin, top + safe.height * 0.32f, safe.width - margin * 2f, 116f),
-                    "TIMELINE COLLAPSED\nRESTART AND ADAPT");
-            }
         }
 
         private void DrawScreenTint(Color color)
@@ -273,18 +233,6 @@ namespace Shardstep
             GUI.color = color;
             GUI.DrawTexture(new Rect(0f, 0f, Screen.width, Screen.height), whiteTexture);
             GUI.color = previous;
-        }
-
-        private static void DrawCenteredPanel(Rect rect, string text)
-        {
-            GUIStyle style = new GUIStyle(GUI.skin.box)
-            {
-                alignment = TextAnchor.MiddleCenter,
-                fontSize = Mathf.Clamp(Mathf.RoundToInt(Screen.width * 0.044f), 16, 28),
-                fontStyle = FontStyle.Bold,
-                wordWrap = true
-            };
-            GUI.Box(rect, text, style);
         }
 
         private void OnDestroy()
