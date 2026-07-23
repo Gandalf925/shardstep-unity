@@ -277,7 +277,7 @@ namespace Shardstep
                     transform.position + Vector3.up * 0.5f,
                     0.88f,
                     ~0,
-                    QueryTriggerInteraction.Ignore);
+                    QueryTriggerInteraction.Collide);
                 foreach (Collider overlap in overlaps)
                 {
                     ChronosphereProjectile projectile =
@@ -367,5 +367,4 @@ namespace Shardstep
             }
         }
     }
-
 }
