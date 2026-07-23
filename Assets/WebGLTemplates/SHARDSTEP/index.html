@@ -1,0 +1,337 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width,height=device-height,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+  <meta name="theme-color" content="#05080d">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <title>{{{ PRODUCT_NAME }}}</title>
+  <style>
+    :root {
+      color-scheme: dark;
+      font-family: Inter, ui-sans-serif, system-ui, -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+      background: #05080d;
+    }
+
+    * {
+      box-sizing: border-box;
+      -webkit-tap-highlight-color: transparent;
+      -webkit-touch-callout: none;
+      user-select: none;
+    }
+
+    html,
+    body {
+      width: 100%;
+      height: 100%;
+      margin: 0;
+      overflow: hidden;
+      overscroll-behavior: none;
+      background: #05080d;
+      touch-action: none;
+    }
+
+    body {
+      position: fixed;
+      inset: 0;
+    }
+
+    #unity-container {
+      position: fixed;
+      top: env(safe-area-inset-top, 0px);
+      right: env(safe-area-inset-right, 0px);
+      bottom: env(safe-area-inset-bottom, 0px);
+      left: env(safe-area-inset-left, 0px);
+      overflow: hidden;
+      background: radial-gradient(circle at 50% 30%, #10202c 0%, #05080d 62%);
+    }
+
+    #unity-canvas {
+      display: block;
+      width: 100%;
+      height: 100%;
+      border: 0;
+      outline: 0;
+      background: #05080d;
+      touch-action: none;
+    }
+
+    .overlay {
+      position: absolute;
+      inset: 0;
+      display: flex;
+      align-items: center;
+      justify-content: center;
+      padding: 24px;
+      background: rgba(2, 5, 9, 0.9);
+      z-index: 10;
+    }
+
+    .panel {
+      width: min(440px, 92vw);
+      padding: 24px;
+      border: 1px solid rgba(72, 225, 255, 0.45);
+      border-radius: 18px;
+      background: rgba(8, 15, 23, 0.96);
+      box-shadow: 0 22px 70px rgba(0, 0, 0, 0.55);
+      text-align: center;
+    }
+
+    .brand {
+      margin: 0 0 8px;
+      font-size: clamp(24px, 5vw, 42px);
+      letter-spacing: 0.16em;
+      color: #8ff5ff;
+    }
+
+    .subtitle {
+      margin: 0 0 22px;
+      color: #b8c8d4;
+      line-height: 1.55;
+    }
+
+    button {
+      width: 100%;
+      min-height: 58px;
+      border: 0;
+      border-radius: 13px;
+      font: inherit;
+      font-weight: 800;
+      letter-spacing: 0.08em;
+      color: #031016;
+      background: linear-gradient(135deg, #8ff5ff, #37cce8);
+      cursor: pointer;
+    }
+
+    button:disabled {
+      opacity: 0.35;
+      cursor: not-allowed;
+    }
+
+    #loading-overlay,
+    #orientation-warning,
+    #error-overlay {
+      display: none;
+    }
+
+    #progress-track {
+      height: 10px;
+      margin-top: 18px;
+      overflow: hidden;
+      border-radius: 999px;
+      background: rgba(255, 255, 255, 0.12);
+    }
+
+    #progress-bar {
+      width: 0%;
+      height: 100%;
+      border-radius: inherit;
+      background: linear-gradient(90deg, #28d4ff, #a86cff);
+      transition: width 120ms linear;
+    }
+
+    #orientation-warning {
+      z-index: 30;
+    }
+
+    #orientation-warning .phone {
+      display: inline-block;
+      margin-bottom: 18px;
+      font-size: 64px;
+      transform: rotate(90deg);
+    }
+
+    #error-message {
+      white-space: pre-wrap;
+      color: #ff9a9a;
+      text-align: left;
+      line-height: 1.45;
+    }
+
+    .hidden {
+      display: none !important;
+    }
+
+    body.touch-device.portrait #orientation-warning {
+      display: flex;
+    }
+
+    @media (max-height: 480px) {
+      .panel {
+        padding: 16px 20px;
+      }
+
+      .subtitle {
+        margin-bottom: 14px;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div id="unity-container">
+    <canvas id="unity-canvas" tabindex="-1" aria-label="{{{ PRODUCT_NAME }}} game canvas"></canvas>
+
+    <div id="launch-overlay" class="overlay">
+      <div class="panel">
+        <h1 class="brand">SHARDSTEP</h1>
+        <p class="subtitle">Landscape is required. Use the left side to move and the right side to aim and release.</p>
+        <button id="start-button" type="button">TAP TO START</button>
+      </div>
+    </div>
+
+    <div id="loading-overlay" class="overlay">
+      <div class="panel">
+        <h1 class="brand">SHARDSTEP</h1>
+        <p class="subtitle" id="loading-label">LOADING UNITY</p>
+        <div id="progress-track"><div id="progress-bar"></div></div>
+      </div>
+    </div>
+
+    <div id="orientation-warning" class="overlay">
+      <div class="panel">
+        <div class="phone">▯</div>
+        <h1 class="brand">ROTATE DEVICE</h1>
+        <p class="subtitle">Turn the phone sideways to continue.</p>
+      </div>
+    </div>
+
+    <div id="error-overlay" class="overlay">
+      <div class="panel">
+        <h1 class="brand">LOAD FAILED</h1>
+        <p id="error-message"></p>
+      </div>
+    </div>
+  </div>
+
+  <script>
+    (function () {
+      "use strict";
+
+      var container = document.getElementById("unity-container");
+      var canvas = document.getElementById("unity-canvas");
+      var launchOverlay = document.getElementById("launch-overlay");
+      var loadingOverlay = document.getElementById("loading-overlay");
+      var errorOverlay = document.getElementById("error-overlay");
+      var errorMessage = document.getElementById("error-message");
+      var progressBar = document.getElementById("progress-bar");
+      var loadingLabel = document.getElementById("loading-label");
+      var startButton = document.getElementById("start-button");
+      var launchStarted = false;
+      var unityInstance = null;
+
+      var touchDevice = window.matchMedia("(pointer: coarse)").matches || navigator.maxTouchPoints > 0;
+      document.body.classList.toggle("touch-device", touchDevice);
+
+      function isLandscape() {
+        return window.innerWidth >= window.innerHeight;
+      }
+
+      function updateOrientationState() {
+        document.body.classList.toggle("portrait", touchDevice && !isLandscape());
+        startButton.disabled = touchDevice && !isLandscape();
+      }
+
+      function preventBrowserGesture(event) {
+        event.preventDefault();
+      }
+
+      ["touchstart", "touchmove", "touchend", "touchcancel"].forEach(function (eventName) {
+        canvas.addEventListener(eventName, preventBrowserGesture, { passive: false });
+      });
+
+      document.addEventListener("contextmenu", preventBrowserGesture);
+      document.addEventListener("gesturestart", preventBrowserGesture, { passive: false });
+      window.addEventListener("resize", updateOrientationState);
+      window.addEventListener("orientationchange", updateOrientationState);
+      if (window.visualViewport) {
+        window.visualViewport.addEventListener("resize", updateOrientationState);
+      }
+
+      async function requestImmersiveMode() {
+        try {
+          if (container.requestFullscreen && !document.fullscreenElement) {
+            await container.requestFullscreen({ navigationUI: "hide" });
+          }
+        } catch (fullscreenError) {
+          console.info("Fullscreen request was not accepted.", fullscreenError);
+        }
+
+        try {
+          if (screen.orientation && screen.orientation.lock) {
+            await screen.orientation.lock("landscape");
+          }
+        } catch (orientationError) {
+          console.info("Landscape lock is not available in this browser.", orientationError);
+        }
+      }
+
+      function showError(error) {
+        loadingOverlay.style.display = "none";
+        launchOverlay.style.display = "none";
+        errorMessage.textContent = error && error.message ? error.message : String(error);
+        errorOverlay.style.display = "flex";
+      }
+
+      async function startUnity() {
+        if (launchStarted || (touchDevice && !isLandscape())) {
+          return;
+        }
+
+        launchStarted = true;
+        startButton.disabled = true;
+        await requestImmersiveMode();
+        updateOrientationState();
+
+        launchOverlay.style.display = "none";
+        loadingOverlay.style.display = "flex";
+
+        var buildUrl = "Build";
+        var loaderUrl = buildUrl + "/{{{ LOADER_FILENAME }}}";
+        var config = {
+          dataUrl: buildUrl + "/{{{ DATA_FILENAME }}}",
+          frameworkUrl: buildUrl + "/{{{ FRAMEWORK_FILENAME }}}",
+          codeUrl: buildUrl + "/{{{ CODE_FILENAME }}}",
+          streamingAssetsUrl: "StreamingAssets",
+          companyName: "{{{ COMPANY_NAME }}}",
+          productName: "{{{ PRODUCT_NAME }}}",
+          productVersion: "{{{ PRODUCT_VERSION }}}",
+          devicePixelRatio: Math.min(window.devicePixelRatio || 1, 2),
+          matchWebGLToCanvasSize: true
+        };
+
+        var script = document.createElement("script");
+        script.src = loaderUrl;
+        script.onload = function () {
+          createUnityInstance(canvas, config, function (progress) {
+            var percent = Math.round(progress * 100);
+            progressBar.style.width = percent + "%";
+            loadingLabel.textContent = "LOADING UNITY " + percent + "%";
+          }).then(function (instance) {
+            unityInstance = instance;
+            loadingOverlay.style.display = "none";
+            canvas.focus();
+          }).catch(showError);
+        };
+        script.onerror = function () {
+          showError(new Error("Could not load the Unity WebGL loader."));
+        };
+        document.body.appendChild(script);
+      }
+
+      startButton.addEventListener("click", startUnity, { once: true });
+      updateOrientationState();
+
+      if (!touchDevice) {
+        startUnity();
+      }
+
+      window.addEventListener("beforeunload", function () {
+        if (unityInstance && unityInstance.Quit) {
+          unityInstance.Quit();
+        }
+      });
+    }());
+  </script>
+</body>
+</html>
