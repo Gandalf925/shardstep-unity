@@ -58,15 +58,33 @@ namespace Shardstep
 
         private void EnsureModules()
         {
-            EnsureSingle<ShardstepPortraitMoveController>();
+            RemoveLegacyGameplayModules();
+            EnsureSingle<ShardstepChronosphereController>();
             EnsureSingle<ShardstepPortraitCameraAssist>();
-            EnsureSingle<ShardstepWeaponController>();
-            EnsureSingle<ShardstepAttackController>();
             EnsureSingle<ShardstepRunFlowController>();
             EnsureSingle<ShardstepGameplayPolish>();
             EnsureSingle<ShardstepCombatReadability>();
-            EnsureSingle<ShardstepCombatAssist>();
             EnsureSingle<ShardstepCombatJuice>();
+        }
+
+        private static void RemoveLegacyGameplayModules()
+        {
+            DestroyAll<ShardstepPortraitMoveController>();
+            DestroyAll<ShardstepWeaponController>();
+            DestroyAll<ShardstepAttackController>();
+            DestroyAll<ShardstepCombatAssist>();
+        }
+
+        private static void DestroyAll<T>() where T : Component
+        {
+            T[] all = Object.FindObjectsOfType<T>();
+            for (int i = 0; i < all.Length; i++)
+            {
+                if (all[i] != null)
+                {
+                    Destroy(all[i]);
+                }
+            }
         }
 
         private void EnsureSingle<T>() where T : Component
