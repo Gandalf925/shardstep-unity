@@ -1,0 +1,65 @@
+name: Fetch failed WebGL job log
+
+on:
+  workflow_dispatch:
+  push:
+    branches:
+      - main
+    paths:
+      - '.github/workflows/fetch-webgl-job-log.yml'
+
+permissions:
+  actions: read
+  contents: read
+  issues: write
+  pull-requests: write
+
+jobs:
+  fetch-log:
+    runs-on: ubuntu-latest
+    timeout-minutes: 10
+    env:
+      SOURCE_JOB_ID: '89107007585'
+      TARGET_PR: '4'
+    steps:
+      - name: Download and extract WebGL job log
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          mkdir -p ci-log/extracted
+          curl --fail --location --silent --show-error \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H "Accept: application/vnd.github+json" \
+            -H "X-GitHub-Api-Version: 2022-11-28" \
+            "https://api.github.com/repos/${GITHUB_REPOSITORY}/actions/jobs/${SOURCE_JOB_ID}/logs" \
+            --output ci-log/webgl-job-logs.zip
+
+          if unzip -tq ci-log/webgl-job-logs.zip >/dev/null 2>&1; then
+            unzip -q ci-log/webgl-job-logs.zip -d ci-log/extracted
+          else
+            cp ci-log/webgl-job-logs.zip ci-log/extracted/webgl-job.log
+          fi
+
+          find ci-log/extracted -type f -print | sort > ci-log/files.txt
+          {
+            echo '## Run 29975524124 — WebGL job log tail'
+            echo
+            echo '```text'
+            while IFS= read -r file; do
+              echo "===== ${file} ====="
+              cat "${file}"
+            done < ci-log/files.txt | tail -n 220
+            echo '```'
+          } > ci-log/comment.md
+
+          gh pr comment "${TARGET_PR}" --repo "${GITHUB_REPOSITORY}" --body-file ci-log/comment.md
+
+      - name: Upload complete job log
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: webgl-job-log-29975524124
+          path: ci-log
+          if-no-files-found: error
+          retention-days: 14
