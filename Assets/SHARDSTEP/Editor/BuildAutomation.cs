@@ -23,7 +23,9 @@ namespace Shardstep.Editor
             PlayerSettings.bundleVersion = "0.5.0-unity-slice";
             PlayerSettings.WebGL.compressionFormat = WebGLCompressionFormat.Disabled;
             PlayerSettings.WebGL.decompressionFallback = true;
-            PlayerSettings.SetScriptingBackend(NamedBuildTarget.WebGL, ScriptingImplementation.IL2CPP);
+#pragma warning disable CS0618
+            PlayerSettings.SetScriptingBackend(BuildTargetGroup.WebGL, ScriptingImplementation.IL2CPP);
+#pragma warning restore CS0618
 
             string outputPath = Environment.GetEnvironmentVariable("BUILD_PATH");
             if (string.IsNullOrWhiteSpace(outputPath))
