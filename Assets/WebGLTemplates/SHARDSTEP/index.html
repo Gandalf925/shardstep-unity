@@ -227,9 +227,25 @@
         return window.innerWidth >= window.innerHeight;
       }
 
+      function resetUnityInput() {
+        if (!unityInstance || !unityInstance.SendMessage) {
+          return;
+        }
+
+        try {
+          unityInstance.SendMessage("SHARDSTEP Runtime", "ResetBrowserInput");
+        } catch (messageError) {
+          console.info("Unity input reset was deferred.", messageError);
+        }
+      }
+
       function updateOrientationState() {
-        document.body.classList.toggle("portrait", touchDevice && !isLandscape());
-        startButton.disabled = touchDevice && !isLandscape();
+        var portrait = touchDevice && !isLandscape();
+        document.body.classList.toggle("portrait", portrait);
+        startButton.disabled = portrait;
+        if (portrait) {
+          resetUnityInput();
+        }
       }
 
       function preventBrowserGesture(event) {
@@ -242,6 +258,12 @@
 
       document.addEventListener("contextmenu", preventBrowserGesture);
       document.addEventListener("gesturestart", preventBrowserGesture, { passive: false });
+      document.addEventListener("visibilitychange", function () {
+        if (document.hidden) {
+          resetUnityInput();
+        }
+      });
+      window.addEventListener("blur", resetUnityInput);
       window.addEventListener("resize", updateOrientationState);
       window.addEventListener("orientationchange", updateOrientationState);
       if (window.visualViewport) {
@@ -249,12 +271,16 @@
       }
 
       async function requestImmersiveMode() {
-        try {
-          if (container.requestFullscreen && !document.fullscreenElement) {
+        if (container.requestFullscreen && !document.fullscreenElement) {
+          try {
             await container.requestFullscreen({ navigationUI: "hide" });
+          } catch (fullscreenOptionsError) {
+            try {
+              await container.requestFullscreen();
+            } catch (fullscreenError) {
+              console.info("Fullscreen request was not accepted.", fullscreenError);
+            }
           }
-        } catch (fullscreenError) {
-          console.info("Fullscreen request was not accepted.", fullscreenError);
         }
 
         try {
@@ -303,6 +329,11 @@
         var script = document.createElement("script");
         script.src = loaderUrl;
         script.onload = function () {
+          if (typeof createUnityInstance !== "function") {
+            showError(new Error("Unity WebGL loader did not expose createUnityInstance()."));
+            return;
+          }
+
           createUnityInstance(canvas, config, function (progress) {
             var percent = Math.round(progress * 100);
             progressBar.style.width = percent + "%";
@@ -327,6 +358,7 @@
       }
 
       window.addEventListener("beforeunload", function () {
+        resetUnityInput();
         if (unityInstance && unityInstance.Quit) {
           unityInstance.Quit();
         }
