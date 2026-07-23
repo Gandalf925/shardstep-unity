@@ -37,6 +37,7 @@ namespace Shardstep
             }
 
             instance = this;
+            Input.simulateMouseWithTouches = false;
             DontDestroyOnLoad(gameObject);
             EnsureModules();
         }
