@@ -164,7 +164,7 @@ namespace Shardstep
             CharacterController controller = enemy.AddComponent<CharacterController>();
             controller.height = kind == EnemyKind.Hound ? 1.1f : 1.8f;
             controller.radius = kind == EnemyKind.Sweeper ? 0.75f : 0.45f;
-            controller.center = new Vector3(0f, controller.height * 0.5f, 0f);
+            controller.center = Vector3.zero;
 
             Color color = kind == EnemyKind.Gunner
                 ? new Color(1f, 0.62f, 0.12f)
@@ -293,5 +293,4 @@ namespace Shardstep
             return instance;
         }
     }
-
 }
