@@ -1,5 +1,6 @@
 using System.Collections.Generic;
 using UnityEngine;
+using UnityEngine.SceneManagement;
 
 namespace Shardstep
 {
@@ -17,30 +18,42 @@ namespace Shardstep
         private PlayerCombat combat;
         private Health playerHealth;
         private Camera worldCamera;
+        private ArenaDirector director;
         private float nextProbe;
         private Health assistedTarget;
         private Health threatTarget;
         private float threatUntil;
         private Texture2D pixel;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void Install()
-        {
-            if (Object.FindObjectOfType<ShardstepCombatAssist>() != null)
-            {
-                return;
-            }
-
-            GameObject host = new GameObject("SHARDSTEP Combat Assist");
-            Object.DontDestroyOnLoad(host);
-            host.AddComponent<ShardstepCombatAssist>();
-        }
-
         private void Awake()
         {
             pixel = new Texture2D(1, 1, TextureFormat.RGBA32, false);
             pixel.SetPixel(0, 0, Color.white);
             pixel.Apply();
+        }
+
+        private void OnEnable()
+        {
+            SceneManager.sceneLoaded += HandleSceneLoaded;
+        }
+
+        private void OnDisable()
+        {
+            SceneManager.sceneLoaded -= HandleSceneLoaded;
+        }
+
+        private void HandleSceneLoaded(Scene scene, LoadSceneMode mode)
+        {
+            player = null;
+            combat = null;
+            playerHealth = null;
+            worldCamera = null;
+            director = null;
+            assistedTarget = null;
+            threatTarget = null;
+            threatUntil = 0f;
+            enemies.Clear();
+            previousPositions.Clear();
         }
 
         private void Update()
@@ -51,14 +64,20 @@ namespace Shardstep
                 return;
             }
 
+            if (director != null && (director.Victory || director.Defeat))
+            {
+                assistedTarget = null;
+                threatTarget = null;
+                threatUntil = 0f;
+                return;
+            }
+
             if (Time.unscaledTime >= nextProbe)
             {
                 nextProbe = Time.unscaledTime + ProbeInterval;
                 RefreshEnemies();
                 DetectIncomingThreat();
             }
-
-            DetectAttackTouch();
         }
 
         private void BindReferences()
@@ -77,6 +96,11 @@ namespace Shardstep
             if (worldCamera == null)
             {
                 worldCamera = Camera.main;
+            }
+
+            if (director == null)
+            {
+                director = Object.FindObjectOfType<ArenaDirector>();
             }
         }
 
@@ -140,31 +164,6 @@ namespace Shardstep
             return best;
         }
 
-        private void DetectAttackTouch()
-        {
-            if (assistedTarget == null || Input.touchCount == 0)
-            {
-                return;
-            }
-
-            Rect attackRect = AttackRectScreen();
-            for (int i = 0; i < Input.touchCount; i++)
-            {
-                Touch touch = Input.GetTouch(i);
-                if (touch.phase != TouchPhase.Began || !attackRect.Contains(touch.position))
-                {
-                    continue;
-                }
-
-                Vector3 direction = assistedTarget.transform.position - player.position;
-                direction.y = 0f;
-                if (direction.sqrMagnitude > 0.01f)
-                {
-                    player.rotation = Quaternion.LookRotation(direction.normalized, Vector3.up);
-                }
-            }
-        }
-
         private void DetectIncomingThreat()
         {
             Health strongestThreat = null;
@@ -186,8 +185,9 @@ namespace Shardstep
                 Vector3 velocity = (current - previous) / Mathf.Max(ProbeInterval, 0.01f);
                 velocity.y = 0f;
                 float approach = Vector3.Dot(velocity, toPlayer.normalized);
-                float score = approach + (CloseThreatRange - distance) * 0.8f;
-                if (score > strongestScore && score > 0.55f)
+                float facing = Vector3.Dot(enemy.transform.forward, toPlayer.normalized);
+                float score = approach + Mathf.Max(0f, facing) * 0.45f + (CloseThreatRange - distance) * 0.8f;
+                if (score > strongestScore && score > 0.75f)
                 {
                     strongestScore = score;
                     strongestThreat = enemy;
@@ -199,14 +199,6 @@ namespace Shardstep
                 threatTarget = strongestThreat;
                 threatUntil = Time.unscaledTime + ThreatDuration;
             }
-        }
-
-        private Rect AttackRectScreen()
-        {
-            Rect safe = Screen.safeArea;
-            float size = Mathf.Clamp(safe.width * 0.22f, 92f, 142f);
-            float margin = Mathf.Clamp(safe.width * 0.035f, 12f, 28f);
-            return new Rect(safe.xMax - size - margin, safe.yMin + margin, size, size);
         }
 
         private void OnGUI()
@@ -228,7 +220,7 @@ namespace Shardstep
         {
             string text = combat.Mode == WeaponMode.Rail
                 ? "RAIL  •  LONG RANGE / PRECISE"
-                : "BLADE  •  CLOSE RANGE / AGGRESSIVE";
+                : "BLADE  •  CLOSE RANGE / HEAVY";
             GUIStyle style = new GUIStyle(GUI.skin.box)
             {
                 alignment = TextAnchor.MiddleCenter,
@@ -275,8 +267,8 @@ namespace Shardstep
                 return;
             }
 
-            float pulse = 0.55f + Mathf.PingPong(Time.unscaledTime * 3.5f, 0.35f);
-            float size = 74f + pulse * 20f;
+            float pulse = 0.42f + Mathf.PingPong(Time.unscaledTime * 3.5f, 0.28f);
+            float size = 70f + pulse * 18f;
             Rect ring = new Rect(screen.x - size * 0.5f, Screen.height - screen.y - size * 0.5f, size, size);
             Color previous = GUI.color;
             GUI.color = new Color(1f, 0.18f, 0.08f, pulse);
