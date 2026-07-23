@@ -1,23 +1,36 @@
 # SHARDSTEP Unity
 
-Unity 2023.2.22f1 / WebGLで再構築するSHARDSTEPのCombat Vertical Sliceです。
+Unity 2023.2.22f1 / WebGLで再構築する、`Enter the Chronosphere` itch版の時間同期型戦闘を基準にしたSHARDSTEPのCombat Vertical Sliceです。
+
+## システム基準
+
+- 入力を考えている間は、敵・弾丸・攻撃進行を含む世界時間が完全停止
+- プレイヤーが1行動を確定したときだけ、全オブジェクトが共通の約0.18秒を進行
+- MOVEはタップ地点への移動ではなく方向指定。1回につき2.6ワールド単位の固定ショートステップ
+- 移動は残像付き高速ダッシュで表現し、経路中の衝突判定を維持
+- プレイヤー弾・敵弾は実体Projectile。停止中も空間に残り、次の1行動で進む距離を読める
+- AIM / FIRE、BLADE、WAIT、RELOAD、SWAPはすべて1行動を消費
+- BLADEは敵弾を破壊可能
+- 増援は実時間ではなく行動数と撃破数で発生
 
 ## 現在の実装
 
-- 移動している間だけ世界時間が進行
-- 照準中と入力停止中は完全停止
-- Railの手動方向照準
-- Bladeの手動方向ダッシュ斬撃
-- Gunner / Hound / Sweeper
-- 敵ごとの攻撃予兆
-- 初期6体＋増援4体
+- Chronosphere共通アクションクロック
+- 固定距離MOVEと障害物・足場判定
+- 残像付きショートステップ
+- Railの手動方向照準、4発マガジン、リロード
+- Bladeの方向指定ダッシュ斬撃と敵弾破壊
+- プレイヤー・Gunner双方の物理Projectile
+- WAIT / SWAP / RELOADの時間コスト
+- Gunner / Hound / Sweeperと攻撃予兆
+- 初期6体＋行動数連動の増援4体
+- Ammo / Health Pickup
 - 敵全滅後のExtraction Gate解放
+- 勝敗後の完全停止
 - SIMPLE Apocalypse Prefab自動検出
 - Unity EditModeテスト
-- GameCIによる手動WebGLビルド
-- PC / タッチ端末共通のAdaptive Input
-- スマートフォン向け横画面・全画面・Safe Area対応WebGLテンプレート
-- フォーカス喪失、バックグラウンド移行、復帰時の入力リセット
+- GameCIによるWebGL検証ビルド
+- PC / タッチ端末共通入力、縦画面Safe Area対応
 
 ## Unityバージョン
 
@@ -44,14 +57,13 @@ GitHub Actionsには次のRepository Secretsが必要です。
 - `UNITY_EMAIL`
 - `UNITY_PASSWORD`
 
-WorkflowはUnityアカウント保護のため手動実行専用です。
-
 - Unity / CI設定: [`docs/SETUP_JA.md`](docs/SETUP_JA.md)
 - スマートフォン配信・実機試験: [`docs/MOBILE_WEBGL_TEST_JA.md`](docs/MOBILE_WEBGL_TEST_JA.md)
 
-## 確認状況
+## 実機確認の合格条件
 
-- PC WebGL起動: 確認済み
-- PC移動: 確認済み
-- スマートフォン向け実装: CI確認前
-- iPhone / Android実機: 未確認
+- 放置中は敵と弾丸が1pxも進まない
+- 遠くをタップしても固定距離の1ステップだけ進む
+- 移動中だけ敵と弾丸が同時進行し、終了時に即停止する
+- 停止中の弾丸配置から、安全な隙間を判断できる
+- MOVE / AIM / WAIT / RELOAD / SWAPの意味がタッチ時に一意に分かる
