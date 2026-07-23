@@ -3,6 +3,10 @@ name: Unity 2023.2 WebGL CI
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+  checks: write
+
 concurrency:
   group: unity-${{ github.workflow }}-${{ github.ref }}
   cancel-in-progress: true
