@@ -65,7 +65,7 @@ namespace Shardstep
             CharacterController controller = player.AddComponent<CharacterController>();
             controller.height = 1.8f;
             controller.radius = 0.42f;
-            controller.center = new Vector3(0f, 0.9f, 0f);
+            controller.center = Vector3.zero;
             Renderer playerRenderer = player.GetComponent<Renderer>();
             if (playerRenderer != null)
             {
