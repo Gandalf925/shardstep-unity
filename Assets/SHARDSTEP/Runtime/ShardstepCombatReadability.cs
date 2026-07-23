@@ -7,7 +7,6 @@ namespace Shardstep
     public sealed class ShardstepCombatReadability : MonoBehaviour
     {
         private const float ProbeInterval = 0.35f;
-        private const float OffscreenMargin = 34f;
         private const float EdgePadding = 64f;
 
         private readonly List<Health> enemies = new List<Health>();
@@ -20,19 +19,6 @@ namespace Shardstep
         private bool hasSafeBounds;
         private float nextProbe;
         private Texture2D pixel;
-
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void Install()
-        {
-            if (Object.FindObjectOfType<ShardstepCombatReadability>() != null)
-            {
-                return;
-            }
-
-            GameObject host = new GameObject("SHARDSTEP Combat Readability");
-            Object.DontDestroyOnLoad(host);
-            host.AddComponent<ShardstepCombatReadability>();
-        }
 
         private void Awake()
         {
@@ -111,12 +97,7 @@ namespace Shardstep
             }
 
             Collider floor = hit.collider;
-            if (floor == null)
-            {
-                return;
-            }
-
-            if (floor == currentFloor && hasSafeBounds)
+            if (floor == null || (floor == currentFloor && hasSafeBounds))
             {
                 return;
             }
@@ -249,8 +230,7 @@ namespace Shardstep
 
             float x = screenPoint.x;
             float y = Screen.height - screenPoint.y;
-            Rect marker = new Rect(x - 18f, y - 18f, 36f, 8f);
-            DrawBar(marker, enemyHealth);
+            DrawBar(new Rect(x - 18f, y - 18f, 36f, 8f), enemyHealth);
         }
 
         private void DrawArrow(Vector2 point, Vector2 direction, Health enemyHealth)
