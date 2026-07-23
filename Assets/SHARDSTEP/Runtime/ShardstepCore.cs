@@ -126,23 +126,33 @@ namespace Shardstep
             if (IsExecuting)
             {
                 Time.timeScale = IsAiming ? 0f : 1f;
-                if (!IsAiming)
-                {
-                    float delta = Time.unscaledDeltaTime;
-                    actionElapsed = Mathf.Min(actionDuration, actionElapsed + delta);
-                    ActiveSeconds += delta;
-
-                    if (actionElapsed >= actionDuration)
-                    {
-                        CompleteCurrentAction();
-                    }
-                }
                 return;
             }
 
             float fallback = ComputeTimeScale(IsAiming, false, MovementMagnitude);
             Time.timeScale = fallback;
             ActiveSeconds += Time.unscaledDeltaTime * fallback;
+        }
+
+        private void LateUpdate()
+        {
+            if (ForcedFreeze || !IsExecuting || IsAiming)
+            {
+                return;
+            }
+
+            float delta = Time.deltaTime;
+            if (delta <= 0f)
+            {
+                return;
+            }
+
+            actionElapsed = Mathf.Min(actionDuration, actionElapsed + delta);
+            ActiveSeconds += delta;
+            if (actionElapsed >= actionDuration)
+            {
+                CompleteCurrentAction();
+            }
         }
 
         private void OnDestroy()
@@ -311,5 +321,4 @@ namespace Shardstep
             }
         }
     }
-
 }
