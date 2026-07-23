@@ -32,19 +32,6 @@ namespace Shardstep
         private int combo;
         private Texture2D pixel;
 
-        [RuntimeInitializeOnLoadMethod(RuntimeInitializeLoadType.AfterSceneLoad)]
-        private static void Install()
-        {
-            if (Object.FindObjectOfType<ShardstepCombatJuice>() != null)
-            {
-                return;
-            }
-
-            GameObject host = new GameObject("SHARDSTEP Combat Juice");
-            Object.DontDestroyOnLoad(host);
-            host.AddComponent<ShardstepCombatJuice>();
-        }
-
         private void Awake()
         {
             pixel = new Texture2D(1, 1, TextureFormat.RGBA32, false);
