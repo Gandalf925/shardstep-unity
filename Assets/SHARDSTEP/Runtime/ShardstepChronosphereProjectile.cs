@@ -316,7 +316,7 @@ namespace Shardstep
 
         private void Update()
         {
-            float phase = Time.unscaledTime * 2.2f;
+            float phase = Time.time * 2.2f;
             transform.rotation = Quaternion.Euler(0f, phase * 35f, 0f);
             Vector3 position = transform.position;
             position.y = baseY + Mathf.Sin(phase) * 0.08f;
