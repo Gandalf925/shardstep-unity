@@ -63,7 +63,7 @@ namespace Shardstep
             Collider primitiveCollider = projectileObject.GetComponent<Collider>();
             if (primitiveCollider != null)
             {
-                UnityEngine.Object.Destroy(primitiveCollider);
+                primitiveCollider.isTrigger = true;
             }
 
             ChronosphereProjectile projectile =
@@ -236,6 +236,11 @@ namespace Shardstep
             }
 
             resolved = true;
+            Collider projectileCollider = GetComponent<Collider>();
+            if (projectileCollider != null)
+            {
+                projectileCollider.enabled = false;
+            }
             if (tail != null)
             {
                 tail.enabled = false;
