@@ -60,6 +60,7 @@ namespace Shardstep
         {
             EnsureSingle<ShardstepPortraitMoveController>();
             EnsureSingle<ShardstepPortraitCameraAssist>();
+            EnsureSingle<ShardstepAttackController>();
             EnsureSingle<ShardstepGameplayPolish>();
             EnsureSingle<ShardstepCombatReadability>();
             EnsureSingle<ShardstepCombatAssist>();
