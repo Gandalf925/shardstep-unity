@@ -1,7 +1,6 @@
+using System;
 using System.Collections;
-using System.Collections.Generic;
 using UnityEngine;
-using UnityEngine.Rendering;
 using UnityEngine.SceneManagement;
 
 namespace Shardstep
@@ -41,41 +40,37 @@ namespace Shardstep
     [DefaultExecutionOrder(-1500)]
     public sealed class ShardstepChronosphereController : MonoBehaviour
     {
-        private const float MoveActionDuration = 0.18f;
-        private const float MoveStopDistance = 0.035f;
-        private const float GroundProbeDistance = 60f;
-        private const float AttackDragThreshold = 18f;
+        private const float ActionDuration = ShardstepClock.StandardActionDuration;
         private const float ObstaclePadding = 0.08f;
         private const float AfterimageLifetime = 0.28f;
         private const int AfterimageCount = 5;
 
         private Transform player;
+        private CharacterController characterController;
         private PlayerMotor motor;
         private PlayerCombat combat;
         private Health playerHealth;
         private ArenaDirector director;
         private Camera worldCamera;
-        private CharacterController characterController;
 
         private ChronosphereActionMode mode = ChronosphereActionMode.Move;
         private int activeFinger = -1;
-        private Vector2 pointerStart;
-        private Vector2 pointerCurrent;
-        private Vector3 indicatedPoint;
+        private int hudFinger = -1;
+        private int hudButton = -1;
         private Vector3 plannedPoint;
         private bool plannedPointValid;
         private bool executingMove;
         private Coroutine moveRoutine;
 
         private GameObject marker;
-        private Renderer markerRenderer;
         private Material markerMaterial;
-        private LineRenderer pathPreview;
+        private LineRenderer path;
+        private Material pathMaterial;
         private Texture2D pixel;
-        private Shader afterimageShader;
+        private string feedback = string.Empty;
+        private float feedbackUntil;
 
         public ChronosphereActionMode Mode => mode;
-        public bool IsPlanning => activeFinger >= 0;
         public bool IsExecutingAction => executingMove ||
             (ShardstepClock.Instance != null && ShardstepClock.Instance.IsExecuting);
 
@@ -84,55 +79,51 @@ namespace Shardstep
             pixel = new Texture2D(1, 1, TextureFormat.RGBA32, false);
             pixel.SetPixel(0, 0, Color.white);
             pixel.Apply();
-            afterimageShader = Shader.Find("Sprites/Default");
             CreatePlanningVisuals();
         }
 
         private void OnEnable()
         {
-            SceneManager.sceneLoaded += HandleSceneLoaded;
+            SceneManager.sceneLoaded += OnSceneLoaded;
         }
 
         private void OnDisable()
         {
-            SceneManager.sceneLoaded -= HandleSceneLoaded;
-            ResetInputAndTime();
+            SceneManager.sceneLoaded -= OnSceneLoaded;
+            ResetInput();
         }
 
-        private void HandleSceneLoaded(Scene scene, LoadSceneMode loadMode)
+        private void OnSceneLoaded(Scene scene, LoadSceneMode modeValue)
         {
             player = null;
+            characterController = null;
             motor = null;
             combat = null;
             playerHealth = null;
             director = null;
             worldCamera = null;
-            characterController = null;
             mode = ChronosphereActionMode.Move;
-            ResetInputAndTime();
+            ResetInput();
         }
 
         private void Update()
         {
             BindReferences();
-            DisableCompetingInputs();
-
+            DisableLegacyInput();
             if (player == null || combat == null || worldCamera == null)
             {
-                FreezeWorld();
                 return;
             }
 
             if (director != null && (director.Victory || director.Defeat))
             {
-                ResetInputAndTime();
+                ResetInput();
                 return;
             }
 
-            if (!executingMove &&
-                (ShardstepClock.Instance == null || !ShardstepClock.Instance.IsExecuting))
+            if (IsExecutingAction)
             {
-                FreezeWorld();
+                return;
             }
 
             HandlePointerInput();
@@ -147,16 +138,16 @@ namespace Shardstep
                 if (playerObject != null)
                 {
                     player = playerObject.transform;
+                    characterController = playerObject.GetComponent<CharacterController>();
                     motor = playerObject.GetComponent<PlayerMotor>();
                     combat = playerObject.GetComponent<PlayerCombat>();
                     playerHealth = playerObject.GetComponent<Health>();
-                    characterController = playerObject.GetComponent<CharacterController>();
                 }
             }
 
             if (director == null)
             {
-                director = Object.FindObjectOfType<ArenaDirector>();
+                director = FindObjectOfType<ArenaDirector>();
             }
 
             if (worldCamera == null)
@@ -165,9 +156,9 @@ namespace Shardstep
             }
         }
 
-        private static void DisableCompetingInputs()
+        private static void DisableLegacyInput()
         {
-            foreach (ShardstepInput input in Object.FindObjectsOfType<ShardstepInput>())
+            foreach (ShardstepInput input in FindObjectsOfType<ShardstepInput>())
             {
                 input.enabled = false;
             }
@@ -175,11 +166,6 @@ namespace Shardstep
 
         private void HandlePointerInput()
         {
-            if (executingMove)
-            {
-                return;
-            }
-
             if (Input.touchCount > 0)
             {
                 HandleTouches();
@@ -208,10 +194,41 @@ namespace Shardstep
             for (int index = 0; index < Input.touchCount; index++)
             {
                 Touch touch = Input.GetTouch(index);
-                if (touch.phase == TouchPhase.Began && activeFinger < 0 &&
-                    !IsHudPoint(touch.position))
+                if (touch.phase == TouchPhase.Began)
                 {
-                    BeginPointer(touch.fingerId, touch.position);
+                    int button = HitHudButton(touch.position);
+                    if (button >= 0 && hudFinger < 0)
+                    {
+                        hudFinger = touch.fingerId;
+                        hudButton = button;
+                        continue;
+                    }
+
+                    if (activeFinger < 0)
+                    {
+                        BeginPointer(touch.fingerId, touch.position);
+                    }
+                }
+
+                if (touch.fingerId == hudFinger)
+                {
+                    if (touch.phase == TouchPhase.Ended)
+                    {
+                        int releasedButton = HitHudButton(touch.position);
+                        int committedButton = hudButton;
+                        hudFinger = -1;
+                        hudButton = -1;
+                        if (releasedButton == committedButton)
+                        {
+                            InvokeHudButton(committedButton);
+                        }
+                    }
+                    else if (touch.phase == TouchPhase.Canceled)
+                    {
+                        hudFinger = -1;
+                        hudButton = -1;
+                    }
+                    continue;
                 }
 
                 if (touch.fingerId != activeFinger)
@@ -237,34 +254,48 @@ namespace Shardstep
         private void BeginPointer(int fingerId, Vector2 screenPoint)
         {
             activeFinger = fingerId;
-            pointerStart = screenPoint;
-            pointerCurrent = screenPoint;
-            FreezeWorld();
-
             if (mode == ChronosphereActionMode.Aim)
             {
                 combat.BeginAim();
             }
-
             UpdatePointer(screenPoint);
         }
 
         private void UpdatePointer(Vector2 screenPoint)
         {
-            pointerCurrent = screenPoint;
-            bool groundPointValid = TryScreenToGround(screenPoint, out indicatedPoint);
+            if (!TryScreenToGround(screenPoint, out Vector3 indicated))
+            {
+                plannedPointValid = false;
+                HidePlanningVisuals();
+                return;
+            }
 
             if (mode == ChronosphereActionMode.Move)
             {
-                plannedPointValid = groundPointValid &&
-                    TryResolveStepDestination(indicatedPoint, out plannedPoint);
-                UpdateMovePreview();
+                plannedPointValid = TryResolveStepDestination(indicated, out plannedPoint);
+                if (plannedPointValid)
+                {
+                    ShowPlanningPath(plannedPoint, new Color(0.12f, 1f, 0.82f, 0.9f));
+                }
+                else
+                {
+                    HidePlanningVisuals();
+                }
+                return;
             }
-            else
+
+            Vector3 aim = indicated - player.position;
+            aim.y = 0f;
+            plannedPointValid = aim.sqrMagnitude > 0.001f;
+            if (plannedPointValid)
             {
-                plannedPointValid = groundPointValid;
-                plannedPoint = indicatedPoint;
-                UpdateAimPreview();
+                plannedPoint = indicated;
+                combat.SetAimDirection(aim.normalized);
+                ShowMarker(plannedPoint, new Color(1f, 0.35f, 0.12f, 0.9f));
+                if (path != null)
+                {
+                    path.enabled = false;
+                }
             }
         }
 
@@ -272,7 +303,6 @@ namespace Shardstep
         {
             UpdatePointer(screenPoint);
             activeFinger = -1;
-
             if (mode == ChronosphereActionMode.Move)
             {
                 if (plannedPointValid)
@@ -281,45 +311,30 @@ namespace Shardstep
                 }
                 else
                 {
-                    HidePlanningVisuals();
+                    SetFeedback("NO VALID STEP");
                 }
-            }
-            else
-            {
-                float drag = Vector2.Distance(pointerStart, screenPoint);
-                if (plannedPointValid && drag >= AttackDragThreshold)
-                {
-                    combat.ReleaseAim(100f);
-                }
-                else
-                {
-                    combat.CancelAim();
-                }
-
                 HidePlanningVisuals();
+                return;
             }
-        }
 
-        private void CancelPointer()
-        {
-            activeFinger = -1;
-            plannedPointValid = false;
-            if (combat != null && combat.IsAiming)
+            bool fired = plannedPointValid && combat.ReleaseAim(100f);
+            if (!fired)
             {
-                combat.CancelAim();
+                SetFeedback(combat.Mode == WeaponMode.Rail && combat.RailAmmo <= 0
+                    ? "RAIL EMPTY — RELOAD"
+                    : "NO VALID SHOT");
             }
             HidePlanningVisuals();
-            FreezeWorld();
         }
 
-        private bool TryResolveStepDestination(Vector3 targetPoint, out Vector3 destination)
+        private bool TryResolveStepDestination(Vector3 indicated, out Vector3 destination)
         {
-            destination = player != null ? player.position : Vector3.zero;
-            if (player == null || !ChronosphereMovePolicy.TryResolveNominalStep(
+            destination = player.position;
+            if (!ChronosphereMovePolicy.TryResolveNominalStep(
                     player.position,
-                    targetPoint,
+                    indicated,
                     out Vector3 direction,
-                    out Vector3 nominalDestination))
+                    out _))
             {
                 return false;
             }
@@ -328,22 +343,27 @@ namespace Shardstep
                 ? Mathf.Max(0.24f, characterController.radius)
                 : 0.36f;
             Vector3 castOrigin = player.position + Vector3.up * Mathf.Max(radius, 0.35f);
-            float allowedDistance = ChronosphereMovePolicy.StandardStepDistance;
-
+            float allowed = ChronosphereMovePolicy.StandardStepDistance;
             RaycastHit[] hits = Physics.SphereCastAll(
                 castOrigin,
                 radius * 0.82f,
                 direction,
-                allowedDistance,
+                allowed,
                 ~0,
                 QueryTriggerInteraction.Ignore);
-            System.Array.Sort(hits, (left, right) => left.distance.CompareTo(right.distance));
-
-            for (int index = 0; index < hits.Length; index++)
+            Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (RaycastHit hit in hits)
             {
-                RaycastHit hit = hits[index];
-                if (hit.collider == null || hit.collider.transform == player ||
-                    hit.collider.transform.IsChildOf(player))
+                if (hit.collider == null ||
+                    hit.collider.transform == player ||
+                    hit.collider.transform.IsChildOf(player) ||
+                    hit.collider.GetComponentInParent<ChronosphereProjectile>() != null)
+                {
+                    continue;
+                }
+
+                Health health = hit.collider.GetComponentInParent<Health>();
+                if (health != null && !health.CompareTag("Player"))
                 {
                     continue;
                 }
@@ -353,103 +373,82 @@ namespace Shardstep
                     continue;
                 }
 
-                allowedDistance = Mathf.Max(0f, hit.distance - ObstaclePadding);
+                allowed = Mathf.Max(0f, hit.distance - ObstaclePadding);
                 break;
             }
 
-            if (allowedDistance < ChronosphereMovePolicy.MinimumDirectionDistance)
+            if (allowed < ChronosphereMovePolicy.MinimumDirectionDistance)
             {
                 return false;
             }
 
-            destination = player.position + direction * allowedDistance;
-
-            Vector3 groundProbeOrigin = destination + Vector3.up * 3f;
+            destination = player.position + direction * allowed;
+            Vector3 probeOrigin = destination + Vector3.up * 3f;
             if (!Physics.Raycast(
-                    groundProbeOrigin,
+                    probeOrigin,
                     Vector3.down,
-                    out RaycastHit groundHit,
+                    out RaycastHit ground,
                     7f,
                     ~0,
-                    QueryTriggerInteraction.Ignore))
-            {
-                return false;
-            }
-
-            if (Mathf.Abs(groundHit.point.y - player.position.y) > 1.25f)
+                    QueryTriggerInteraction.Ignore) ||
+                Mathf.Abs(ground.point.y - player.position.y) > 1.25f)
             {
                 return false;
             }
 
             destination.y = player.position.y;
-            return Vector3.Distance(player.position, destination) >=
-                ChronosphereMovePolicy.MinimumDirectionDistance;
+            return true;
         }
 
         private void CommitMove(Vector3 destination)
         {
+            ShardstepClock clock = ShardstepClock.Instance;
+            if (clock == null || !clock.TryBeginAction(ActionDuration))
+            {
+                SetFeedback("ACTION BUSY");
+                return;
+            }
+
             if (moveRoutine != null)
             {
                 StopCoroutine(moveRoutine);
             }
-            moveRoutine = StartCoroutine(ExecuteMove(destination));
+            moveRoutine = StartCoroutine(ExecuteMove(destination, clock));
         }
 
-        private IEnumerator ExecuteMove(Vector3 destination)
+        private IEnumerator ExecuteMove(Vector3 destination, ShardstepClock clock)
         {
             executingMove = true;
-            HidePlanningVisuals();
-
-            if (motor != null)
-            {
-                motor.MoveInput = Vector2.zero;
-            }
-
             Vector3 start = player.position;
-            Vector3 planar = destination - start;
-            planar.y = 0f;
-            float totalDistance = planar.magnitude;
-            if (totalDistance < ChronosphereMovePolicy.MinimumDirectionDistance)
+            Vector3 delta = destination - start;
+            delta.y = 0f;
+            if (delta.sqrMagnitude <
+                ChronosphereMovePolicy.MinimumDirectionDistance *
+                ChronosphereMovePolicy.MinimumDirectionDistance)
             {
-                FinishMove();
+                executingMove = false;
+                moveRoutine = null;
                 yield break;
             }
 
-            Vector3 direction = planar / totalDistance;
-            player.rotation = Quaternion.LookRotation(direction, Vector3.up);
+            player.forward = delta.normalized;
             SpawnAfterimage();
-
-            if (ShardstepClock.Instance != null)
-            {
-                ShardstepClock.Instance.IsAiming = false;
-                ShardstepClock.Instance.MovementMagnitude = 1f;
-            }
-
             float elapsed = 0f;
-            int nextAfterimage = 1;
-            Vector3 lastPosition = player.position;
-            int blockedFrames = 0;
-
-            while (player != null && elapsed < MoveActionDuration)
+            int nextGhost = 1;
+            while (player != null && clock != null && clock.IsExecuting && elapsed < ActionDuration)
             {
-                if (ShardstepClock.Instance != null)
-                {
-                    ShardstepClock.Instance.MovementMagnitude = 1f;
-                }
-
-                float deltaTime = Time.deltaTime;
-                if (deltaTime <= 0f)
+                float frame = Time.deltaTime;
+                if (frame <= 0f)
                 {
                     yield return null;
                     continue;
                 }
 
-                elapsed = Mathf.Min(MoveActionDuration, elapsed + deltaTime);
-                float progress = elapsed / MoveActionDuration;
+                elapsed = Mathf.Min(ActionDuration, elapsed + frame);
+                float progress = elapsed / ActionDuration;
                 Vector3 desired = Vector3.Lerp(start, destination, progress);
                 Vector3 movement = desired - player.position;
                 movement.y = 0f;
-
                 if (characterController != null)
                 {
                     characterController.Move(movement);
@@ -459,210 +458,100 @@ namespace Shardstep
                     player.position += movement;
                 }
 
-                float afterimageThreshold = (float)nextAfterimage / AfterimageCount;
-                if (progress >= afterimageThreshold && nextAfterimage < AfterimageCount)
+                if (nextGhost < AfterimageCount &&
+                    progress >= (float)nextGhost / AfterimageCount)
                 {
                     SpawnAfterimage();
-                    nextAfterimage++;
+                    nextGhost++;
                 }
-
-                float moved = Vector3.Distance(lastPosition, player.position);
-                blockedFrames = moved < MoveStopDistance ? blockedFrames + 1 : 0;
-                lastPosition = player.position;
-                if (blockedFrames >= 2)
-                {
-                    break;
-                }
-
                 yield return null;
             }
 
             SpawnAfterimage();
-            FinishMove();
-        }
-
-        private void FinishMove()
-        {
             if (motor != null)
             {
                 motor.MoveInput = Vector2.zero;
             }
-
             executingMove = false;
             moveRoutine = null;
-            FreezeWorld();
         }
 
-        private void SpawnAfterimage()
+        private void TryWait()
         {
-            if (player == null || afterimageShader == null)
+            CancelPointer();
+            if (ShardstepClock.Instance == null || !ShardstepClock.Instance.TryBeginAction())
+            {
+                SetFeedback("ACTION BUSY");
+                return;
+            }
+            SetFeedback("WAIT");
+        }
+
+        private void TryReload()
+        {
+            CancelPointer();
+            if (combat == null || !combat.TryReload())
+            {
+                SetFeedback(combat != null && combat.RailAmmo >= PlayerCombat.RailMagazineSize
+                    ? "MAGAZINE FULL"
+                    : "CANNOT RELOAD");
+                return;
+            }
+            SetFeedback("RELOADING");
+        }
+
+        private void TrySwitchWeapon()
+        {
+            CancelPointer();
+            if (combat == null || !combat.TryCycleWeapon())
+            {
+                SetFeedback("ACTION BUSY");
+                return;
+            }
+            SetFeedback(combat.Mode == WeaponMode.Rail ? "EQUIPPED RAIL" : "EQUIPPED BLADE");
+        }
+
+        private void SetMode(ChronosphereActionMode next)
+        {
+            if (IsExecutingAction)
             {
                 return;
             }
-
-            GameObject ghostRoot = new GameObject("Chronosphere Afterimage");
-            List<Material> ghostMaterials = new List<Material>();
-            List<Mesh> bakedMeshes = new List<Mesh>();
-            bool createdRenderer = false;
-
-            foreach (MeshRenderer sourceRenderer in player.GetComponentsInChildren<MeshRenderer>())
-            {
-                MeshFilter sourceFilter = sourceRenderer.GetComponent<MeshFilter>();
-                if (sourceFilter == null || sourceFilter.sharedMesh == null)
-                {
-                    continue;
-                }
-
-                GameObject ghost = new GameObject(sourceRenderer.gameObject.name + " Ghost");
-                ghost.transform.SetParent(ghostRoot.transform, false);
-                ghost.transform.position = sourceRenderer.transform.position;
-                ghost.transform.rotation = sourceRenderer.transform.rotation;
-                ghost.transform.localScale = sourceRenderer.transform.lossyScale;
-
-                ghost.AddComponent<MeshFilter>().sharedMesh = sourceFilter.sharedMesh;
-                MeshRenderer ghostRenderer = ghost.AddComponent<MeshRenderer>();
-                ConfigureGhostRenderer(ghostRenderer, ghostMaterials);
-                createdRenderer = true;
-            }
-
-            foreach (SkinnedMeshRenderer sourceRenderer in player.GetComponentsInChildren<SkinnedMeshRenderer>())
-            {
-                Mesh baked = new Mesh { name = sourceRenderer.gameObject.name + " Afterimage Mesh" };
-                sourceRenderer.BakeMesh(baked);
-                bakedMeshes.Add(baked);
-
-                GameObject ghost = new GameObject(sourceRenderer.gameObject.name + " Ghost");
-                ghost.transform.SetParent(ghostRoot.transform, false);
-                ghost.transform.position = sourceRenderer.transform.position;
-                ghost.transform.rotation = sourceRenderer.transform.rotation;
-                ghost.transform.localScale = sourceRenderer.transform.lossyScale;
-
-                ghost.AddComponent<MeshFilter>().sharedMesh = baked;
-                MeshRenderer ghostRenderer = ghost.AddComponent<MeshRenderer>();
-                ConfigureGhostRenderer(ghostRenderer, ghostMaterials);
-                createdRenderer = true;
-            }
-
-            if (!createdRenderer)
-            {
-                Destroy(ghostRoot);
-                for (int index = 0; index < bakedMeshes.Count; index++)
-                {
-                    Destroy(bakedMeshes[index]);
-                }
-                return;
-            }
-
-            StartCoroutine(FadeAfterimage(ghostRoot, ghostMaterials, bakedMeshes));
+            CancelPointer();
+            mode = next;
         }
 
-        private void ConfigureGhostRenderer(Renderer ghostRenderer, List<Material> materials)
+        private void HandleKeyboardInput()
         {
-            Material material = new Material(afterimageShader)
-            {
-                color = new Color(0.12f, 0.95f, 1f, 0.36f)
-            };
-            ghostRenderer.material = material;
-            ghostRenderer.shadowCastingMode = ShadowCastingMode.Off;
-            ghostRenderer.receiveShadows = false;
-            materials.Add(material);
-        }
-
-        private IEnumerator FadeAfterimage(
-            GameObject ghostRoot,
-            List<Material> materials,
-            List<Mesh> bakedMeshes)
-        {
-            float elapsed = 0f;
-            while (ghostRoot != null && elapsed < AfterimageLifetime)
-            {
-                elapsed += Time.unscaledDeltaTime;
-                float remaining = 1f - Mathf.Clamp01(elapsed / AfterimageLifetime);
-                for (int index = 0; index < materials.Count; index++)
-                {
-                    if (materials[index] == null)
-                    {
-                        continue;
-                    }
-
-                    Color color = materials[index].color;
-                    color.a = 0.36f * remaining;
-                    materials[index].color = color;
-                }
-                yield return null;
-            }
-
-            if (ghostRoot != null)
-            {
-                Destroy(ghostRoot);
-            }
-            for (int index = 0; index < materials.Count; index++)
-            {
-                if (materials[index] != null)
-                {
-                    Destroy(materials[index]);
-                }
-            }
-            for (int index = 0; index < bakedMeshes.Count; index++)
-            {
-                if (bakedMeshes[index] != null)
-                {
-                    Destroy(bakedMeshes[index]);
-                }
-            }
-        }
-
-        private void UpdateMovePreview()
-        {
-            if (!plannedPointValid || player == null)
-            {
-                HidePlanningVisuals();
-                return;
-            }
-
-            ShowMarker(plannedPoint, new Color(0.12f, 1f, 0.82f, 0.9f));
-            ShowPath(
-                player.position + Vector3.up * 0.08f,
-                plannedPoint + Vector3.up * 0.08f,
-                new Color(0.12f, 1f, 0.82f, 0.8f));
-        }
-
-        private void UpdateAimPreview()
-        {
-            if (!plannedPointValid || player == null)
-            {
-                return;
-            }
-
-            Vector3 direction = plannedPoint - player.position;
-            direction.y = 0f;
-            if (direction.sqrMagnitude < 0.001f)
-            {
-                return;
-            }
-
-            combat.SetAimDirection(direction.normalized);
-            ShowMarker(plannedPoint, new Color(1f, 0.35f, 0.12f, 0.9f));
+#if UNITY_EDITOR || UNITY_STANDALONE || UNITY_WEBGL
+            if (Input.GetKeyDown(KeyCode.M) || Input.GetKeyDown(KeyCode.Alpha1)) SetMode(ChronosphereActionMode.Move);
+            if (Input.GetKeyDown(KeyCode.F) || Input.GetKeyDown(KeyCode.Alpha2)) SetMode(ChronosphereActionMode.Aim);
+            if (Input.GetKeyDown(KeyCode.Space)) TryWait();
+            if (Input.GetKeyDown(KeyCode.Q)) TrySwitchWeapon();
+            if (Input.GetKeyDown(KeyCode.R)) TryReload();
+#endif
         }
 
         private bool TryScreenToGround(Vector2 screenPoint, out Vector3 worldPoint)
         {
-            worldPoint = player != null ? player.position : Vector3.zero;
-            if (worldCamera == null || player == null)
-            {
-                return false;
-            }
-
+            worldPoint = player.position;
             Ray ray = worldCamera.ScreenPointToRay(screenPoint);
-            if (Physics.Raycast(
-                    ray,
-                    out RaycastHit hit,
-                    GroundProbeDistance,
-                    ~0,
-                    QueryTriggerInteraction.Ignore))
+            RaycastHit[] hits = Physics.RaycastAll(ray, 60f, ~0, QueryTriggerInteraction.Ignore);
+            Array.Sort(hits, (a, b) => a.distance.CompareTo(b.distance));
+            foreach (RaycastHit hit in hits)
             {
-                worldPoint = hit.point + Vector3.up * 0.06f;
-                return true;
+                if (hit.collider == null ||
+                    hit.collider.GetComponentInParent<ChronosphereProjectile>() != null)
+                {
+                    continue;
+                }
+
+                Bounds bounds = hit.collider.bounds;
+                if (hit.normal.y > 0.45f || bounds.size.x > 5f || bounds.size.z > 5f)
+                {
+                    worldPoint = hit.point + Vector3.up * 0.06f;
+                    return true;
+                }
             }
 
             Plane plane = new Plane(Vector3.up, player.position);
@@ -671,208 +560,173 @@ namespace Shardstep
                 worldPoint = ray.GetPoint(distance);
                 return true;
             }
-
             return false;
         }
 
-        private void HandleKeyboardInput()
+        private void CreatePlanningVisuals()
         {
-#if UNITY_EDITOR || UNITY_STANDALONE || UNITY_WEBGL
-            if (Input.GetKeyDown(KeyCode.Alpha1) || Input.GetKeyDown(KeyCode.M))
-            {
-                SetMode(ChronosphereActionMode.Move);
-            }
-            if (Input.GetKeyDown(KeyCode.Alpha2) || Input.GetKeyDown(KeyCode.F))
-            {
-                SetMode(ChronosphereActionMode.Aim);
-            }
-            if (Input.GetKeyDown(KeyCode.Q) && combat != null)
-            {
-                combat.SetWeapon(combat.Mode == WeaponMode.Rail
-                    ? WeaponMode.Blade
-                    : WeaponMode.Rail);
-            }
-#endif
+            Shader shader = Shader.Find("Sprites/Default");
+            marker = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
+            marker.name = "Chronosphere Action Marker";
+            marker.transform.SetParent(transform, false);
+            marker.transform.localScale = new Vector3(0.48f, 0.018f, 0.48f);
+            Collider collider = marker.GetComponent<Collider>();
+            if (collider != null) Destroy(collider);
+            markerMaterial = new Material(shader);
+            marker.GetComponent<Renderer>().material = markerMaterial;
+            marker.SetActive(false);
+
+            GameObject pathObject = new GameObject("Chronosphere Move Preview");
+            pathObject.transform.SetParent(transform, false);
+            path = pathObject.AddComponent<LineRenderer>();
+            path.positionCount = 2;
+            path.useWorldSpace = true;
+            path.startWidth = 0.08f;
+            path.endWidth = 0.08f;
+            path.numCapVertices = 6;
+            pathMaterial = new Material(shader);
+            path.material = pathMaterial;
+            path.enabled = false;
         }
 
-        private void SetMode(ChronosphereActionMode nextMode)
+        private void ShowPlanningPath(Vector3 destination, Color color)
         {
-            if (executingMove)
-            {
-                return;
-            }
-
-            CancelPointer();
-            mode = nextMode;
+            ShowMarker(destination, color);
+            path.enabled = true;
+            pathMaterial.color = color;
+            path.SetPosition(0, player.position + Vector3.up * 0.08f);
+            path.SetPosition(1, destination + Vector3.up * 0.08f);
         }
 
-        private void FreezeWorld()
+        private void ShowMarker(Vector3 position, Color color)
         {
-            if (motor != null && !executingMove)
-            {
-                motor.MoveInput = Vector2.zero;
-            }
+            marker.transform.position = position;
+            markerMaterial.color = color;
+            marker.SetActive(true);
+        }
 
-            if (ShardstepClock.Instance != null)
+        private void HidePlanningVisuals()
+        {
+            if (marker != null) marker.SetActive(false);
+            if (path != null) path.enabled = false;
+        }
+
+        private void SpawnAfterimage()
+        {
+            if (player == null) return;
+            GameObject ghost = GameObject.CreatePrimitive(PrimitiveType.Capsule);
+            ghost.name = "Chronosphere Afterimage";
+            ghost.transform.position = player.position;
+            ghost.transform.rotation = player.rotation;
+            ghost.transform.localScale = player.localScale;
+            Collider collider = ghost.GetComponent<Collider>();
+            if (collider != null) Destroy(collider);
+            Material material = ShardstepVisuals.CreateMaterial(new Color(0.15f, 0.92f, 1f, 0.34f), true);
+            ghost.GetComponent<Renderer>().material = material;
+            StartCoroutine(FadeAfterimage(ghost, material));
+        }
+
+        private IEnumerator FadeAfterimage(GameObject ghost, Material material)
+        {
+            float elapsed = 0f;
+            while (ghost != null && elapsed < AfterimageLifetime)
             {
-                ShardstepClock.Instance.MovementMagnitude = executingMove ? 1f : 0f;
-                ShardstepClock.Instance.IsAiming =
-                    mode == ChronosphereActionMode.Aim && activeFinger >= 0;
+                elapsed += Time.unscaledDeltaTime;
+                Color color = material.color;
+                color.a = 0.34f * (1f - Mathf.Clamp01(elapsed / AfterimageLifetime));
+                material.color = color;
+                yield return null;
+            }
+            if (material != null) Destroy(material);
+            if (ghost != null) Destroy(ghost);
+        }
+
+        private static Rect[] ActionButtonsScreen()
+        {
+            Rect safe = Screen.safeArea;
+            float margin = Mathf.Clamp(safe.width * 0.03f, 10f, 24f);
+            float gap = Mathf.Clamp(safe.width * 0.018f, 7f, 14f);
+            float height = Mathf.Clamp(safe.height * 0.062f, 52f, 76f);
+            float lowerY = safe.yMin + margin;
+            float upperY = lowerY + height + gap;
+            float third = (safe.width - margin * 2f - gap * 2f) / 3f;
+            float half = (safe.width - margin * 2f - gap) / 2f;
+            return new[]
+            {
+                new Rect(safe.xMin + margin, lowerY, third, height),
+                new Rect(safe.xMin + margin + third + gap, lowerY, third, height),
+                new Rect(safe.xMin + margin + (third + gap) * 2f, lowerY, third, height),
+                new Rect(safe.xMin + margin, upperY, half, height),
+                new Rect(safe.xMin + margin + half + gap, upperY, half, height)
+            };
+        }
+
+        private static int HitHudButton(Vector2 point)
+        {
+            Rect[] buttons = ActionButtonsScreen();
+            for (int i = 0; i < buttons.Length; i++)
+            {
+                if (buttons[i].Contains(point)) return i;
+            }
+            return -1;
+        }
+
+        private static bool IsHudPoint(Vector2 point) => HitHudButton(point) >= 0;
+
+        private void InvokeHudButton(int button)
+        {
+            switch (button)
+            {
+                case 0: SetMode(ChronosphereActionMode.Move); break;
+                case 1: SetMode(ChronosphereActionMode.Aim); break;
+                case 2: TryWait(); break;
+                case 3: TrySwitchWeapon(); break;
+                case 4: TryReload(); break;
             }
         }
 
-        private void ResetInputAndTime()
+        private void CancelPointer()
         {
             activeFinger = -1;
             plannedPointValid = false;
+            if (combat != null && combat.IsAiming) combat.CancelAim();
+            HidePlanningVisuals();
+        }
+
+        private void ResetInput()
+        {
+            CancelPointer();
+            hudFinger = -1;
+            hudButton = -1;
             executingMove = false;
             if (moveRoutine != null)
             {
                 StopCoroutine(moveRoutine);
                 moveRoutine = null;
             }
-            if (motor != null)
-            {
-                motor.MoveInput = Vector2.zero;
-            }
-            if (combat != null && combat.IsAiming)
-            {
-                combat.CancelAim();
-            }
-            HidePlanningVisuals();
-            FreezeWorld();
+            if (motor != null) motor.MoveInput = Vector2.zero;
         }
 
-        private void CreatePlanningVisuals()
+        private void SetFeedback(string message)
         {
-            marker = GameObject.CreatePrimitive(PrimitiveType.Cylinder);
-            marker.name = "Chronosphere Action Marker";
-            marker.transform.SetParent(transform, false);
-            marker.transform.localScale = new Vector3(0.48f, 0.018f, 0.48f);
-            Collider markerCollider = marker.GetComponent<Collider>();
-            if (markerCollider != null)
-            {
-                Destroy(markerCollider);
-            }
-            markerRenderer = marker.GetComponent<Renderer>();
-            Shader shader = Shader.Find("Sprites/Default");
-            if (markerRenderer != null && shader != null)
-            {
-                markerMaterial = new Material(shader);
-                markerRenderer.material = markerMaterial;
-            }
-            marker.SetActive(false);
-
-            GameObject pathObject = new GameObject("Chronosphere Move Preview");
-            pathObject.transform.SetParent(transform, false);
-            pathPreview = pathObject.AddComponent<LineRenderer>();
-            pathPreview.positionCount = 2;
-            pathPreview.useWorldSpace = true;
-            pathPreview.startWidth = 0.08f;
-            pathPreview.endWidth = 0.08f;
-            pathPreview.numCapVertices = 6;
-            if (shader != null)
-            {
-                pathPreview.material = new Material(shader);
-            }
-            pathPreview.enabled = false;
-        }
-
-        private void ShowMarker(Vector3 position, Color color)
-        {
-            if (marker == null)
-            {
-                return;
-            }
-            marker.transform.position = position;
-            marker.SetActive(true);
-            if (markerMaterial != null)
-            {
-                markerMaterial.color = color;
-            }
-        }
-
-        private void ShowPath(Vector3 from, Vector3 to, Color color)
-        {
-            if (pathPreview == null)
-            {
-                return;
-            }
-            pathPreview.enabled = true;
-            pathPreview.SetPosition(0, from);
-            pathPreview.SetPosition(1, to);
-            if (pathPreview.material != null)
-            {
-                pathPreview.material.color = color;
-            }
-        }
-
-        private void HidePlanningVisuals()
-        {
-            if (marker != null)
-            {
-                marker.SetActive(false);
-            }
-            if (pathPreview != null)
-            {
-                pathPreview.enabled = false;
-            }
-        }
-
-        private static Rect MoveButtonScreen()
-        {
-            Rect safe = Screen.safeArea;
-            float margin = Mathf.Clamp(safe.width * 0.035f, 12f, 26f);
-            float height = Mathf.Clamp(safe.height * 0.07f, 58f, 82f);
-            float width = Mathf.Clamp(safe.width * 0.27f, 116f, 190f);
-            return new Rect(safe.xMin + margin, safe.yMin + margin, width, height);
-        }
-
-        private static Rect AimButtonScreen()
-        {
-            Rect move = MoveButtonScreen();
-            return new Rect(move.xMax + 10f, move.y, move.width, move.height);
-        }
-
-        private static Rect WeaponButtonScreen()
-        {
-            Rect safe = Screen.safeArea;
-            Rect aim = AimButtonScreen();
-            float margin = Mathf.Clamp(safe.width * 0.035f, 12f, 26f);
-            return new Rect(safe.xMax - aim.width - margin, aim.y, aim.width, aim.height);
-        }
-
-        private static bool IsHudPoint(Vector2 point)
-        {
-            return MoveButtonScreen().Contains(point) ||
-                AimButtonScreen().Contains(point) ||
-                WeaponButtonScreen().Contains(point);
+            feedback = message;
+            feedbackUntil = Time.unscaledTime + 0.85f;
         }
 
         private void OnGUI()
         {
-            if (pixel == null || combat == null)
+            if (pixel == null || combat == null ||
+                (director != null && (director.Victory || director.Defeat)))
             {
                 return;
             }
 
-            DrawActionButton(
-                MoveButtonScreen(),
-                "MOVE",
-                mode == ChronosphereActionMode.Move,
-                () => SetMode(ChronosphereActionMode.Move));
-            DrawActionButton(
-                AimButtonScreen(),
-                "AIM / FIRE",
-                mode == ChronosphereActionMode.Aim,
-                () => SetMode(ChronosphereActionMode.Aim));
-            DrawActionButton(
-                WeaponButtonScreen(),
-                combat.Mode == WeaponMode.Rail ? "RAIL" : "BLADE",
-                false,
-                () => combat.SetWeapon(combat.Mode == WeaponMode.Rail
-                    ? WeaponMode.Blade
-                    : WeaponMode.Rail));
+            Rect[] buttons = ActionButtonsScreen();
+            DrawButton(buttons[0], "MOVE", mode == ChronosphereActionMode.Move, () => SetMode(ChronosphereActionMode.Move));
+            DrawButton(buttons[1], "AIM / FIRE", mode == ChronosphereActionMode.Aim, () => SetMode(ChronosphereActionMode.Aim));
+            DrawButton(buttons[2], "WAIT", false, TryWait);
+            DrawButton(buttons[3], combat.Mode == WeaponMode.Rail ? "SWAP → BLADE" : "SWAP → RAIL", false, TrySwitchWeapon);
+            DrawButton(buttons[4], combat.IsReloading ? "RELOADING" : "RELOAD RAIL", false, TryReload);
 
             Rect safe = Screen.safeArea;
             float top = Screen.height - safe.yMax;
@@ -880,63 +734,52 @@ namespace Shardstep
             {
                 alignment = TextAnchor.MiddleCenter,
                 fontStyle = FontStyle.Bold,
-                fontSize = Mathf.Clamp(Mathf.RoundToInt(Screen.width * 0.033f), 13, 21)
+                fontSize = Mathf.Clamp(Mathf.RoundToInt(Screen.width * 0.031f), 12, 20),
+                wordWrap = true
             };
-            string timeState = IsExecutingAction ? "TIME MOVING" : "TIME FROZEN";
+            ShardstepClock clock = ShardstepClock.Instance;
+            string state = clock != null && clock.IsExecuting
+                ? $"ACTION {clock.CompletedActions + 1} MOVING"
+                : $"TIME FROZEN  •  ACTIONS {clock?.CompletedActions ?? 0}";
             string instruction = mode == ChronosphereActionMode.Move
-                ? "MOVE: TOUCH A DIRECTION • ONE FIXED STEP"
-                : "AIM: DRAG TOWARD TARGET • RELEASE TO FIRE";
+                ? "MOVE: TAP A DIRECTION — ONE FIXED STEP"
+                : "AIM: TAP A DIRECTION — RELEASE TO FIRE";
+            string message = Time.unscaledTime < feedbackUntil ? $"\n{feedback}" : string.Empty;
             GUI.Box(
-                new Rect(safe.xMin + 14f, top + 12f, safe.width - 28f, 72f),
-                $"{timeState}    HP {playerHealth?.Current}/{playerHealth?.Maximum}    " +
-                $"ENEMIES {director?.RemainingEnemies}\n{instruction}",
+                new Rect(safe.xMin + 12f, top + 10f, safe.width - 24f, 92f),
+                $"{state}\nHP {playerHealth?.Current}/{playerHealth?.Maximum}  " +
+                $"HOSTILES {director?.RemainingEnemies}  {combat.Mode} {combat.AmmoLabel}\n" +
+                $"{instruction}{message}",
                 status);
         }
 
-        private void DrawActionButton(
-            Rect screenRect,
-            string label,
-            bool selected,
-            System.Action action)
+        private void DrawButton(Rect screenRect, string label, bool selected, Action action)
         {
             Rect guiRect = new Rect(
                 screenRect.x,
                 Screen.height - screenRect.yMax,
                 screenRect.width,
                 screenRect.height);
-            Color previous = GUI.color;
+            Color old = GUI.color;
             GUI.color = selected
                 ? new Color(0.12f, 0.9f, 0.84f, 0.95f)
-                : new Color(0.08f, 0.1f, 0.14f, 0.9f);
+                : new Color(0.08f, 0.1f, 0.14f, 0.92f);
             GUI.DrawTexture(guiRect, pixel);
-            GUI.color = previous;
-
+            GUI.color = old;
             GUIStyle style = new GUIStyle(GUI.skin.label)
             {
                 alignment = TextAnchor.MiddleCenter,
                 fontStyle = FontStyle.Bold,
-                fontSize = Mathf.Clamp(Mathf.RoundToInt(Screen.width * 0.036f), 15, 24)
+                fontSize = Mathf.Clamp(Mathf.RoundToInt(Screen.width * 0.03f), 12, 21)
             };
-            if (GUI.Button(guiRect, label, style))
-            {
-                action?.Invoke();
-            }
+            if (GUI.Button(guiRect, label, style)) action?.Invoke();
         }
 
         private void OnDestroy()
         {
-            if (markerMaterial != null)
-            {
-                Destroy(markerMaterial);
-            }
-            if (pathPreview != null && pathPreview.material != null)
-            {
-                Destroy(pathPreview.material);
-            }
-            if (pixel != null)
-            {
-                Destroy(pixel);
-            }
+            if (markerMaterial != null) Destroy(markerMaterial);
+            if (pathMaterial != null) Destroy(pathMaterial);
+            if (pixel != null) Destroy(pixel);
         }
     }
 }
