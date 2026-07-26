@@ -129,86 +129,111 @@ jobs:
           printf 'LFS tracked files: '
           git -C projectbow lfs ls-files | wc -l
 
-      - name: Build ProjectBow portrait WebGL
+      - name: Fetch pinned GameCI Unity Builder
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf .game-ci-unity-builder
+          git init --quiet .game-ci-unity-builder
+          git -C .game-ci-unity-builder remote add origin https://github.com/game-ci/unity-builder.git
+          git -C .game-ci-unity-builder fetch --quiet --depth=1 origin 1d4ee0697f193f54668e98961d79907911f4b4f2
+          git -C .game-ci-unity-builder checkout --quiet --detach FETCH_HEAD
+          test -f .game-ci-unity-builder/dist/index.js
+
+      - name: Build ProjectBow and capture full GameCI output
         id: build
-        uses: game-ci/unity-builder@v4
+        shell: bash
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-        with:
-          projectPath: projectbow
-          unityVersion: 2023.2.3f1
-          targetPlatform: WebGL
-          buildMethod: ProjectBowWebGLBuild.BuildFromCommandLine
-          versioning: None
-          allowDirtyBuild: true
-          collectUnityLogs: true
-          streamUnityLogs: false
+          INPUT_TARGET_PLATFORM: WebGL
+          INPUT_UNITY_VERSION: 2023.2.3f1
+          INPUT_PROJECT_PATH: projectbow
+          INPUT_BUILD_METHOD: ProjectBowWebGLBuild.BuildFromCommandLine
+          INPUT_VERSIONING: None
+          INPUT_ALLOW_DIRTY_BUILD: 'true'
+          INPUT_PROVIDER_STRATEGY: local
+          INPUT_CONTAINER_REGISTRY_REPOSITORY: unityci/editor
+          INPUT_CONTAINER_REGISTRY_IMAGE_VERSION: '3'
+          INPUT_DOCKER_WORKSPACE_PATH: /github/workspace
+          INPUT_SKIP_ACTIVATION: 'false'
+        run: |
+          set +e
+          : > projectbow-gameci.log
+          node .game-ci-unity-builder/dist/index.js >projectbow-gameci.log 2>&1
+          result=$?
+          set -e
+          echo "GameCI process exit code: ${result}"
+          echo "gameci_exit_code=${result}" >> "$GITHUB_OUTPUT"
+          echo '===== Last 300 lines of GameCI / Unity output ====='
+          tail -n 300 projectbow-gameci.log
+          exit "$result"
 
       - name: Collect concise ProjectBow diagnostics
         if: failure()
         shell: bash
+        env:
+          UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
+          UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
+          UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         run: |
           set +e
           report=projectbow-ci-diagnostics.txt
-          : > "$report"
-          {
-            echo "## ProjectBow Unity diagnostic"
-            echo
-            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
-            echo "- Project branch: webgl-portrait-mobile"
-            echo "- Unity: 2023.2.3f1"
-            echo
-            echo '### Candidate log files'
-            find projectbow/Builds projectbow/Logs projectbow/Library Logs \
-              -maxdepth 8 -type f \
-              \( -iname '*.log' -o -iname '*diagnostic*.txt' \) \
-              -size -25M 2>/dev/null | sort | head -n 100
-            echo
-            echo '### Filtered Unity errors'
-          } >> "$report"
+          python3 - <<'PY'
+          from pathlib import Path
+          import os
+          import re
 
-          while IFS= read -r log; do
-            [[ -f "$log" ]] || continue
-            matches=$(grep -E -i \
-              'error CS[0-9]+|Compilation failed|Scripts have compiler errors|BuildFailedException|Addressables build failed|Exception:|NullReferenceException|MissingReferenceException|Assertion failed|Failed to|build failed|Aborting batchmode|executeMethod method .* could not be found|License.*failed|activation.*failed' \
-              "$log" 2>/dev/null | tail -n 120)
-            if [[ -n "$matches" ]]; then
-              {
-                echo
-                echo "#### ${log}"
-                echo '```text'
-                printf '%s\n' "$matches"
-                echo '```'
-              } >> "$report"
-            fi
-          done < <(
-            find projectbow/Builds projectbow/Logs projectbow/Library Logs \
-              -maxdepth 8 -type f \
-              \( -iname '*.log' -o -iname '*diagnostic*.txt' \) \
-              -size -25M 2>/dev/null | sort
+          source = Path('projectbow-gameci.log')
+          output = Path('projectbow-ci-diagnostics.txt')
+          text = source.read_text(encoding='utf-8', errors='replace') if source.exists() else ''
+
+          patterns = re.compile(
+              r'error CS\d+|Compilation failed|Scripts have compiler errors|BuildFailedException|'
+              r'Addressables build failed|Exception:|NullReferenceException|MissingReferenceException|'
+              r'Assertion failed|Failed to|build failed|Aborting batchmode|executeMethod method .* could not be found|'
+              r'License.*failed|activation.*failed|exit code',
+              re.IGNORECASE,
           )
+          lines = [line for line in text.splitlines() if patterns.search(line)]
+          if not lines:
+              lines = text.splitlines()[-250:]
+          else:
+              lines = lines[-300:]
 
-          {
-            echo
-            echo '### Stage and Addressables source inventory'
-            echo '```text'
-            find projectbow/Assets -type f -name '*.cs' 2>/dev/null \
-              | grep -E -i '/[^/]*(Stage|Addressable)[^/]*\.cs$' \
-              | sort | head -n 200
-            echo '```'
-          } >> "$report"
+          redactions = [
+              os.environ.get('UNITY_LICENSE', ''),
+              os.environ.get('UNITY_EMAIL', ''),
+              os.environ.get('UNITY_PASSWORD', ''),
+          ]
+          cleaned = []
+          for line in lines:
+              for secret in redactions:
+                  if secret:
+                      line = line.replace(secret, '[REDACTED]')
+              cleaned.append(line)
 
-          if ! grep -q '^#### ' "$report"; then
-            {
-              echo
-              echo 'No matching Unity error lines were found in workspace log files.'
-            } >> "$report"
-          fi
-
-          tail -n 450 "$report" > "${report}.tail"
-          mv "${report}.tail" "$report"
+          header = [
+              '## ProjectBow Unity diagnostic',
+              '',
+              f'- Run: {os.environ.get("GITHUB_SERVER_URL")}/{os.environ.get("GITHUB_REPOSITORY")}/actions/runs/{os.environ.get("GITHUB_RUN_ID")}',
+              '- Project branch: webgl-portrait-mobile',
+              '- Unity: 2023.2.3f1',
+              '',
+              '### Filtered GameCI / Unity output',
+              '```text',
+          ]
+          footer = ['```', '', '### Stage and Addressables source inventory', '```text']
+          inventory = []
+          for path in sorted(Path('projectbow/Assets').rglob('*.cs')):
+              name = path.name.lower()
+              if 'stage' in name or 'addressable' in name:
+                  inventory.append(str(path))
+          footer.extend(inventory[:200])
+          footer.append('```')
+          output.write_text('\n'.join(header + cleaned + footer) + '\n', encoding='utf-8')
+          PY
           cat "$report"
 
       - name: Publish diagnostic on host Draft PR
