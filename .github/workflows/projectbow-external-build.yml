@@ -59,20 +59,41 @@ jobs:
           sudo rm -rf /usr/local/.ghcup
           sudo rm -rf /opt/hostedtoolcache/CodeQL
           sudo apt-get clean
-          docker system prune --all --force || true
+          docker system prune --all --force >/dev/null 2>&1 || true
 
           echo 'Disk usage after cleanup:'
           df -h /
 
-      - name: Checkout ProjectBow migration branch with LFS
+      - name: Checkout ProjectBow Git revision without LFS smudge
         uses: actions/checkout@v4
+        env:
+          GIT_LFS_SKIP_SMUDGE: '1'
         with:
           repository: Gandalf925/ProjectBow
           ref: webgl-portrait-mobile
           path: projectbow
           fetch-depth: 1
-          lfs: true
+          lfs: false
           clean: true
+          show-progress: false
+
+      - name: Materialize ProjectBow LFS assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          git -C projectbow lfs install --local
+          git -C projectbow lfs pull --include='Assets/**' --exclude=''
+
+      - name: Verify no LFS pointers remain in Assets
+        shell: bash
+        run: |
+          set -euo pipefail
+          unresolved=$(git -C projectbow lfs status --porcelain | wc -l)
+          if [[ "$unresolved" -ne 0 ]]; then
+            git -C projectbow lfs status --porcelain
+            echo "Unresolved LFS entries remain: $unresolved"
+            exit 1
+          fi
 
       - name: Report ProjectBow checkout size
         shell: bash
