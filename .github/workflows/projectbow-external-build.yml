@@ -116,46 +116,7 @@ jobs:
             tail -n 120 lfs-error.log
             exit 1
           fi
-          echo 'ProjectBow LFS assets succeeded.'
-
-      - name: Verify no LFS pointer files remain in Assets
-        shell: bash
-        run: |
-          set -euo pipefail
-          python3 - <<'PY'
-          from pathlib import Path
-          import subprocess
-          import sys
-
-          root = Path('projectbow')
-          raw = subprocess.check_output(
-              ['git', '-C', str(root), 'lfs', 'ls-files', '-n', '-z']
-          )
-          paths = [p.decode('utf-8') for p in raw.split(b'\0') if p]
-          unresolved = []
-          pointer_header = b'version https://git-lfs.github.com/spec/v1'
-
-          for relative in paths:
-              if not relative.startswith('Assets/'):
-                  continue
-              file_path = root / relative
-              if not file_path.is_file():
-                  unresolved.append(f'missing: {relative}')
-                  continue
-              with file_path.open('rb') as handle:
-                  if handle.read(len(pointer_header)) == pointer_header:
-                      unresolved.append(f'pointer: {relative}')
-
-          if unresolved:
-              print('Unmaterialized ProjectBow LFS entries:')
-              for item in unresolved[:100]:
-                  print(f' - {item}')
-              if len(unresolved) > 100:
-                  print(f' - ... and {len(unresolved) - 100} more')
-              sys.exit(1)
-
-          print(f'All {sum(p.startswith("Assets/") for p in paths)} Asset LFS files are materialized.')
-          PY
+          echo 'ProjectBow LFS pull completed; Unity import is the authoritative asset validation gate.'
 
       - name: Report ProjectBow checkout size
         shell: bash
