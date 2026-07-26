@@ -141,6 +141,45 @@ jobs:
           buildMethod: ProjectBowWebGLBuild.BuildFromCommandLine
           versioning: None
           allowDirtyBuild: true
+          collectUnityLogs: true
+          streamUnityLogs: false
+
+      - name: Print concise Unity Editor errors
+        if: failure()
+        shell: bash
+        run: |
+          set +e
+          logs=(
+            projectbow/Builds/Logs/Editor.log
+            projectbow/Logs/UnityDiagnostics/editor-log/Editor.log
+            Logs/UnityDiagnostics/editor-log/Editor.log
+          )
+          found=0
+          for log in "${logs[@]}"; do
+            if [[ -f "$log" ]]; then
+              found=1
+              echo "===== Concise diagnostics from $log ====="
+              grep -E -i \
+                'error CS[0-9]+|Compilation failed|Scripts have compiler errors|BuildFailedException|Addressables build failed|Exception:|NullReferenceException|MissingReferenceException|Assertion failed|Failed to|build failed|Aborting batchmode' \
+                "$log" | tail -n 250
+            fi
+          done
+          if [[ "$found" -eq 0 ]]; then
+            echo 'No Unity Editor.log was found at the expected locations.'
+          fi
+          exit 0
+
+      - name: Upload Unity Editor diagnostics
+        if: always()
+        uses: actions/upload-artifact@v4
+        with:
+          name: projectbow-unity-editor-diagnostics
+          path: |
+            projectbow/Builds/Logs/Editor.log
+            projectbow/Logs/UnityDiagnostics/editor-log/Editor.log
+            Logs/UnityDiagnostics/editor-log/Editor.log
+          if-no-files-found: warn
+          retention-days: 14
 
       - name: Verify ProjectBow WebGL output
         shell: bash
