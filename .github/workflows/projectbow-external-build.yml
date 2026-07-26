@@ -14,6 +14,8 @@ on:
 
 permissions:
   contents: read
+  issues: write
+  pull-requests: write
 
 concurrency:
   group: projectbow-external-build-${{ github.ref }}
@@ -144,41 +146,95 @@ jobs:
           collectUnityLogs: true
           streamUnityLogs: false
 
-      - name: Print concise Unity Editor errors
+      - name: Collect concise ProjectBow diagnostics
         if: failure()
         shell: bash
         run: |
           set +e
-          logs=(
-            projectbow/Builds/Logs/Editor.log
-            projectbow/Logs/UnityDiagnostics/editor-log/Editor.log
-            Logs/UnityDiagnostics/editor-log/Editor.log
-          )
-          found=0
-          for log in "${logs[@]}"; do
-            if [[ -f "$log" ]]; then
-              found=1
-              echo "===== Concise diagnostics from $log ====="
-              grep -E -i \
-                'error CS[0-9]+|Compilation failed|Scripts have compiler errors|BuildFailedException|Addressables build failed|Exception:|NullReferenceException|MissingReferenceException|Assertion failed|Failed to|build failed|Aborting batchmode' \
-                "$log" | tail -n 250
-            fi
-          done
-          if [[ "$found" -eq 0 ]]; then
-            echo 'No Unity Editor.log was found at the expected locations.'
-          fi
-          exit 0
+          report=projectbow-ci-diagnostics.txt
+          : > "$report"
+          {
+            echo "## ProjectBow Unity diagnostic"
+            echo
+            echo "- Run: ${GITHUB_SERVER_URL}/${GITHUB_REPOSITORY}/actions/runs/${GITHUB_RUN_ID}"
+            echo "- Project branch: webgl-portrait-mobile"
+            echo "- Unity: 2023.2.3f1"
+            echo
+            echo '### Candidate log files'
+            find projectbow/Builds projectbow/Logs projectbow/Library Logs \
+              -maxdepth 8 -type f \
+              \( -iname '*.log' -o -iname '*diagnostic*.txt' \) \
+              -size -25M 2>/dev/null | sort | head -n 100
+            echo
+            echo '### Filtered Unity errors'
+          } >> "$report"
 
-      - name: Upload Unity Editor diagnostics
-        if: always()
+          while IFS= read -r log; do
+            [[ -f "$log" ]] || continue
+            matches=$(grep -E -i \
+              'error CS[0-9]+|Compilation failed|Scripts have compiler errors|BuildFailedException|Addressables build failed|Exception:|NullReferenceException|MissingReferenceException|Assertion failed|Failed to|build failed|Aborting batchmode|executeMethod method .* could not be found|License.*failed|activation.*failed' \
+              "$log" 2>/dev/null | tail -n 120)
+            if [[ -n "$matches" ]]; then
+              {
+                echo
+                echo "#### ${log}"
+                echo '```text'
+                printf '%s\n' "$matches"
+                echo '```'
+              } >> "$report"
+            fi
+          done < <(
+            find projectbow/Builds projectbow/Logs projectbow/Library Logs \
+              -maxdepth 8 -type f \
+              \( -iname '*.log' -o -iname '*diagnostic*.txt' \) \
+              -size -25M 2>/dev/null | sort
+          )
+
+          {
+            echo
+            echo '### Stage and Addressables source inventory'
+            echo '```text'
+            find projectbow/Assets -type f -name '*.cs' 2>/dev/null \
+              | grep -E -i '/[^/]*(Stage|Addressable)[^/]*\.cs$' \
+              | sort | head -n 200
+            echo '```'
+          } >> "$report"
+
+          if ! grep -q '^#### ' "$report"; then
+            {
+              echo
+              echo 'No matching Unity error lines were found in workspace log files.'
+            } >> "$report"
+          fi
+
+          tail -n 450 "$report" > "${report}.tail"
+          mv "${report}.tail" "$report"
+          cat "$report"
+
+      - name: Publish diagnostic on host Draft PR
+        if: failure()
+        shell: bash
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          set -euo pipefail
+          test -f projectbow-ci-diagnostics.txt
+          jq -Rs '{body: .}' projectbow-ci-diagnostics.txt > comment.json
+          curl --fail-with-body --silent --show-error \
+            -X POST \
+            -H "Authorization: Bearer ${GH_TOKEN}" \
+            -H 'Accept: application/vnd.github+json' \
+            -H 'X-GitHub-Api-Version: 2022-11-28' \
+            "${GITHUB_API_URL}/repos/${GITHUB_REPOSITORY}/issues/11/comments" \
+            --data @comment.json >/dev/null
+
+      - name: Upload concise ProjectBow diagnostics
+        if: failure()
         uses: actions/upload-artifact@v4
         with:
-          name: projectbow-unity-editor-diagnostics
-          path: |
-            projectbow/Builds/Logs/Editor.log
-            projectbow/Logs/UnityDiagnostics/editor-log/Editor.log
-            Logs/UnityDiagnostics/editor-log/Editor.log
-          if-no-files-found: warn
+          name: projectbow-ci-diagnostics
+          path: projectbow-ci-diagnostics.txt
+          if-no-files-found: error
           retention-days: 14
 
       - name: Verify ProjectBow WebGL output
