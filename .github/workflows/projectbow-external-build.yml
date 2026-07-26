@@ -64,25 +64,57 @@ jobs:
           echo 'Disk usage after cleanup:'
           df -h /
 
-      - name: Checkout ProjectBow Git revision without LFS smudge
-        uses: actions/checkout@v4
-        env:
-          GIT_LFS_SKIP_SMUDGE: '1'
-        with:
-          repository: Gandalf925/ProjectBow
-          ref: webgl-portrait-mobile
-          path: projectbow
-          fetch-depth: 1
-          lfs: false
-          clean: true
-          show-progress: false
+      - name: Clone ProjectBow history and trees only
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -rf projectbow clone-error.log
+          if ! GIT_LFS_SKIP_SMUDGE=1 git -c http.version=HTTP/1.1 clone \
+              --quiet \
+              --filter=blob:none \
+              --no-checkout \
+              --depth=1 \
+              --single-branch \
+              --branch=webgl-portrait-mobile \
+              https://github.com/Gandalf925/ProjectBow.git \
+              projectbow \
+              2>clone-error.log; then
+            echo 'ProjectBow partial clone failed:'
+            tail -n 120 clone-error.log
+            exit 1
+          fi
+          echo 'ProjectBow history/tree clone succeeded.'
+
+      - name: Materialize ProjectBow current Git tree without LFS content
+        shell: bash
+        run: |
+          set -euo pipefail
+          rm -f checkout-error.log
+          if ! GIT_LFS_SKIP_SMUDGE=1 git -C projectbow checkout \
+              --quiet \
+              webgl-portrait-mobile \
+              2>checkout-error.log; then
+            echo 'ProjectBow working-tree checkout failed:'
+            tail -n 120 checkout-error.log
+            exit 1
+          fi
+          echo 'ProjectBow Git working tree succeeded.'
 
       - name: Materialize ProjectBow LFS assets
         shell: bash
         run: |
           set -euo pipefail
           git -C projectbow lfs install --local
-          git -C projectbow lfs pull --include='Assets/**' --exclude=''
+          rm -f lfs-error.log
+          if ! git -C projectbow lfs pull \
+              --include='Assets/**' \
+              --exclude='' \
+              2>lfs-error.log; then
+            echo 'ProjectBow LFS pull failed:'
+            tail -n 120 lfs-error.log
+            exit 1
+          fi
+          echo 'ProjectBow LFS assets succeeded.'
 
       - name: Verify no LFS pointers remain in Assets
         shell: bash
