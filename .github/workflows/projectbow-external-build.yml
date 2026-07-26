@@ -3,12 +3,8 @@ name: Build ProjectBow using existing Unity license
 on:
   workflow_dispatch:
   pull_request:
-    branches:
-      - main
-    types:
-      - opened
-      - synchronize
-      - reopened
+    branches: [main]
+    types: [opened, synchronize, reopened]
     paths:
       - '.github/workflows/projectbow-external-build.yml'
 
@@ -55,54 +51,34 @@ jobs:
           df -h /
           available_gb=$(df --output=avail -BG / | tail -n 1 | tr -dc '0-9')
           if [[ "$available_gb" -lt 60 ]]; then
-            echo "Only ${available_gb} GiB is available; removing unused SDKs."
-            sudo rm -rf /usr/local/lib/android
-            sudo rm -rf /usr/share/dotnet
-            sudo rm -rf /opt/ghc
-            sudo rm -rf /usr/local/.ghcup
-            sudo rm -rf /opt/hostedtoolcache/CodeQL
+            sudo rm -rf /usr/local/lib/android /usr/share/dotnet /opt/ghc /usr/local/.ghcup /opt/hostedtoolcache/CodeQL
             sudo apt-get clean
             docker system prune --all --force >/dev/null 2>&1 || true
             df -h /
-          else
-            echo "${available_gb} GiB is available; cleanup is unnecessary."
           fi
 
-      - name: Clone ProjectBow history and trees only
+      - name: Clone ProjectBow Git trees
         shell: bash
         run: |
           set -euo pipefail
           rm -rf projectbow clone-error.log
           if ! GIT_LFS_SKIP_SMUDGE=1 git -c http.version=HTTP/1.1 clone \
-              --quiet \
-              --filter=blob:none \
-              --no-checkout \
-              --depth=1 \
-              --single-branch \
+              --quiet --filter=blob:none --no-checkout --depth=1 --single-branch \
               --branch=webgl-portrait-mobile \
-              https://github.com/Gandalf925/ProjectBow.git \
-              projectbow \
-              2>clone-error.log; then
-            echo 'ProjectBow partial clone failed:'
+              https://github.com/Gandalf925/ProjectBow.git projectbow 2>clone-error.log; then
             tail -n 120 clone-error.log
             exit 1
           fi
-          echo 'ProjectBow history/tree clone succeeded.'
 
-      - name: Materialize ProjectBow current Git tree without LFS content
+      - name: Materialize ProjectBow Git working tree
         shell: bash
         run: |
           set -euo pipefail
           rm -f checkout-error.log
-          if ! GIT_LFS_SKIP_SMUDGE=1 git -C projectbow checkout \
-              --quiet \
-              webgl-portrait-mobile \
-              2>checkout-error.log; then
-            echo 'ProjectBow working-tree checkout failed:'
+          if ! GIT_LFS_SKIP_SMUDGE=1 git -C projectbow checkout --quiet webgl-portrait-mobile 2>checkout-error.log; then
             tail -n 120 checkout-error.log
             exit 1
           fi
-          echo 'ProjectBow Git working tree succeeded.'
 
       - name: Materialize ProjectBow LFS assets
         shell: bash
@@ -110,17 +86,12 @@ jobs:
           set -euo pipefail
           git -C projectbow lfs install --local
           rm -f lfs-error.log
-          if ! git -C projectbow lfs pull \
-              --include='Assets/**' \
-              --exclude='' \
-              2>lfs-error.log; then
-            echo 'ProjectBow LFS pull failed:'
+          if ! git -C projectbow lfs pull --include='Assets/**' --exclude='' 2>lfs-error.log; then
             tail -n 120 lfs-error.log
             exit 1
           fi
-          echo 'ProjectBow LFS pull completed; Unity import is the authoritative asset validation gate.'
 
-      - name: Report ProjectBow checkout size
+      - name: Report ProjectBow checkout
         shell: bash
         run: |
           set -euo pipefail
@@ -140,24 +111,24 @@ jobs:
           git -C .game-ci-unity-builder checkout --quiet --detach FETCH_HEAD
           test -f .game-ci-unity-builder/dist/index.js
 
-      - name: Build ProjectBow and capture full GameCI output
+      - name: Build ProjectBow and capture GameCI output
         id: build
         shell: bash
         env:
           UNITY_LICENSE: ${{ secrets.UNITY_LICENSE }}
           UNITY_EMAIL: ${{ secrets.UNITY_EMAIL }}
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
-          INPUT_TARGET_PLATFORM: WebGL
-          INPUT_UNITY_VERSION: 2023.2.3f1
-          INPUT_PROJECT_PATH: projectbow
-          INPUT_BUILD_METHOD: ProjectBowWebGLBuild.BuildFromCommandLine
-          INPUT_VERSIONING: None
-          INPUT_ALLOW_DIRTY_BUILD: 'true'
-          INPUT_PROVIDER_STRATEGY: local
-          INPUT_CONTAINER_REGISTRY_REPOSITORY: unityci/editor
-          INPUT_CONTAINER_REGISTRY_IMAGE_VERSION: '3'
-          INPUT_DOCKER_WORKSPACE_PATH: /github/workspace
-          INPUT_SKIP_ACTIVATION: 'false'
+          targetPlatform: WebGL
+          unityVersion: 2023.2.3f1
+          projectPath: projectbow
+          buildMethod: ProjectBowWebGLBuild.BuildFromCommandLine
+          versioning: None
+          allowDirtyBuild: 'true'
+          providerStrategy: local
+          containerRegistryRepository: unityci/editor
+          containerRegistryImageVersion: '3'
+          dockerWorkspacePath: /github/workspace
+          skipActivation: 'false'
         run: |
           set +e
           : > projectbow-gameci.log
@@ -179,62 +150,47 @@ jobs:
           UNITY_PASSWORD: ${{ secrets.UNITY_PASSWORD }}
         run: |
           set +e
-          report=projectbow-ci-diagnostics.txt
           python3 - <<'PY'
           from pathlib import Path
           import os
           import re
 
-          source = Path('projectbow-gameci.log')
-          output = Path('projectbow-ci-diagnostics.txt')
-          text = source.read_text(encoding='utf-8', errors='replace') if source.exists() else ''
-
-          patterns = re.compile(
+          text = Path('projectbow-gameci.log').read_text(encoding='utf-8', errors='replace') if Path('projectbow-gameci.log').exists() else ''
+          pattern = re.compile(
               r'error CS\d+|Compilation failed|Scripts have compiler errors|BuildFailedException|'
               r'Addressables build failed|Exception:|NullReferenceException|MissingReferenceException|'
               r'Assertion failed|Failed to|build failed|Aborting batchmode|executeMethod method .* could not be found|'
-              r'License.*failed|activation.*failed|exit code',
-              re.IGNORECASE,
-          )
-          lines = [line for line in text.splitlines() if patterns.search(line)]
-          if not lines:
-              lines = text.splitlines()[-250:]
-          else:
-              lines = lines[-300:]
-
-          redactions = [
-              os.environ.get('UNITY_LICENSE', ''),
-              os.environ.get('UNITY_EMAIL', ''),
-              os.environ.get('UNITY_PASSWORD', ''),
-          ]
+              r'License.*failed|activation.*failed|exit code', re.IGNORECASE)
+          lines = [line for line in text.splitlines() if pattern.search(line)]
+          lines = (lines[-300:] if lines else text.splitlines()[-300:])
+          secrets = [os.environ.get(k, '') for k in ('UNITY_LICENSE', 'UNITY_EMAIL', 'UNITY_PASSWORD')]
           cleaned = []
           for line in lines:
-              for secret in redactions:
+              for secret in secrets:
                   if secret:
                       line = line.replace(secret, '[REDACTED]')
               cleaned.append(line)
 
-          header = [
-              '## ProjectBow Unity diagnostic',
-              '',
+          inventory = []
+          root = Path('projectbow/Assets')
+          if root.exists():
+              for path in sorted(root.rglob('*.cs')):
+                  if 'stage' in path.name.lower() or 'addressable' in path.name.lower():
+                      inventory.append(str(path))
+
+          body = [
+              '## ProjectBow Unity diagnostic', '',
               f'- Run: {os.environ.get("GITHUB_SERVER_URL")}/{os.environ.get("GITHUB_REPOSITORY")}/actions/runs/{os.environ.get("GITHUB_RUN_ID")}',
               '- Project branch: webgl-portrait-mobile',
-              '- Unity: 2023.2.3f1',
-              '',
-              '### Filtered GameCI / Unity output',
-              '```text',
+              '- Unity: 2023.2.3f1', '',
+              '### Filtered GameCI / Unity output', '```text',
+              *cleaned, '```', '',
+              '### Stage and Addressables source inventory', '```text',
+              *inventory[:200], '```',
           ]
-          footer = ['```', '', '### Stage and Addressables source inventory', '```text']
-          inventory = []
-          for path in sorted(Path('projectbow/Assets').rglob('*.cs')):
-              name = path.name.lower()
-              if 'stage' in name or 'addressable' in name:
-                  inventory.append(str(path))
-          footer.extend(inventory[:200])
-          footer.append('```')
-          output.write_text('\n'.join(header + cleaned + footer) + '\n', encoding='utf-8')
+          Path('projectbow-ci-diagnostics.txt').write_text('\n'.join(body) + '\n', encoding='utf-8')
           PY
-          cat "$report"
+          cat projectbow-ci-diagnostics.txt
 
       - name: Publish diagnostic on host Draft PR
         if: failure()
@@ -243,7 +199,6 @@ jobs:
           GH_TOKEN: ${{ github.token }}
         run: |
           set -euo pipefail
-          test -f projectbow-ci-diagnostics.txt
           jq -Rs '{body: .}' projectbow-ci-diagnostics.txt > comment.json
           curl --fail-with-body --silent --show-error \
             -X POST \
